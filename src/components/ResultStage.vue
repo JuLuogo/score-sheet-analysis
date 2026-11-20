@@ -1,12 +1,10 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import ChartPanel from './ChartPanel.vue'
-import PanelBox from './PanelBox.vue'
 import { CHART_FONT } from '../lib/echarts'
 import { deltaTone, deltaWord, fmtDelta, fmtRankDelta, fmtScore } from '../lib/format'
 
-type TabKey = 'overview' | 'summary' | 'subject' | 'notes'
 type Kind = 'text' | 'score' | 'rank' | 'delta' | 'scoreDelta' | 'num'
 type SeriesRow = SeriesStudent & { index: number }
 interface Col {
@@ -20,6 +18,7 @@ interface Col {
 
 const props = defineProps<{
   result: SeriesAnalysis
+  view: 'rank' | 'trend' | 'bucket' | 'stats' | 'summary' | 'subject' | 'notes'
   className: string
   selection: ExportSelection
   exporting: boolean
@@ -36,13 +35,6 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-const initialTab =
-  new URLSearchParams(window.location.search).get('tab')
-const tab = ref<TabKey>(
-  initialTab === 'summary' || initialTab === 'subject' || initialTab === 'notes'
-    ? initialTab
-    : 'overview',
-)
 const subject = ref(props.result.subjects[0] ?? '')
 const query = ref('')
 const dialogVisible = ref(false)
@@ -50,64 +42,66 @@ const dialogVisible = ref(false)
 const first = computed(() => props.result.labels[0])
 const last = computed(() => props.result.labels[props.result.labels.length - 1])
 
-const avgOption = computed(() => ({
-  color: ['#22d3ee', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#38bdf8'],
+const avgOption = computed(() => (
+  {
+  color: ['#3b6ea5', '#c0504d', '#2e7d32', '#b7791f', '#7f7f7f', '#8c6d31', '#4f81bd'],
   textStyle: CHART_FONT,
   tooltip: {
     trigger: 'axis',
-    backgroundColor: 'rgba(4,16,32,.94)',
-    borderColor: 'rgba(56,189,248,.3)',
+    backgroundColor: 'rgba(255,255,255,.98)',
+    borderColor: '#dddddd',
   },
-  legend: { top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: '#8aa6c8' } },
+  legend: { top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: '#666666' } },
   grid: { left: 38, right: 14, top: 34, bottom: 24 },
   xAxis: {
     type: 'category',
     data: props.result.labels,
-    boundaryGap: false,
+    boundaryGap: true,
     axisTick: { show: false },
-    axisLine: { lineStyle: { color: 'rgba(56,189,248,.25)' } },
-    axisLabel: { color: '#8aa6c8', fontSize: 11 },
+    axisLine: { lineStyle: { color: '#e0e0e0' } },
+    axisLabel: { color: '#666666', fontSize: 11 },
   },
   yAxis: {
     type: 'value',
-    splitLine: { lineStyle: { color: 'rgba(56,189,248,.08)' } },
-    axisLabel: { color: '#6f8db0', fontSize: 11 },
+    splitLine: { lineStyle: { color: '#eeeeee' } },
+    axisLabel: { color: '#777777', fontSize: 11 },
   },
   series: props.result.subjects.map((item) => ({
     name: item,
     type: 'line',
     smooth: true,
-    symbolSize: 5,
+    symbolSize: 6,
     data: props.result.examStats.map((stat) => stat.subjectAvg[item]),
+    connectNulls: true,
     lineStyle: { width: 2 },
   })),
 }))
 
 const bucketOption = computed(() => ({
-  color: ['#1e5f99', '#22d3ee'],
+  color: ['#b7c4d4', '#3b6ea5'],
   textStyle: CHART_FONT,
   tooltip: {
     trigger: 'axis',
-    backgroundColor: 'rgba(4,16,32,.94)',
-    borderColor: 'rgba(56,189,248,.3)',
+    backgroundColor: 'rgba(255,255,255,.98)',
+    borderColor: '#dddddd',
   },
-  legend: { top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: '#8aa6c8' } },
+  legend: { top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: '#666666' } },
   grid: { left: 34, right: 12, top: 30, bottom: 22 },
   xAxis: {
     type: 'category',
     data: props.result.buckets.map((bucket) => bucket.label),
     axisTick: { show: false },
-    axisLine: { lineStyle: { color: 'rgba(56,189,248,.25)' } },
-    axisLabel: { color: '#8aa6c8', fontSize: 10 },
+    axisLine: { lineStyle: { color: '#e0e0e0' } },
+    axisLabel: { color: '#666666', fontSize: 10 },
   },
   yAxis: {
     type: 'value',
-    splitLine: { lineStyle: { color: 'rgba(56,189,248,.08)' } },
-    axisLabel: { color: '#6f8db0', fontSize: 10 },
+    splitLine: { lineStyle: { color: '#eeeeee' } },
+    axisLabel: { color: '#777777', fontSize: 10 },
   },
   series: [
-    { name: first.value, type: 'bar', barMaxWidth: 18, data: props.result.buckets.map((b) => b.first), label: { show: true, position: 'top', fontSize: 9, color: '#8aa6c8' } },
-    { name: last.value, type: 'bar', barMaxWidth: 18, data: props.result.buckets.map((b) => b.last), label: { show: true, position: 'top', fontSize: 9, color: '#22d3ee' } },
+    { name: first.value, type: 'bar', barMaxWidth: 18, data: props.result.buckets.map((b) => b.first), label: { show: true, position: 'top', fontSize: 9, color: '#666666' } },
+    { name: last.value, type: 'bar', barMaxWidth: 18, data: props.result.buckets.map((b) => b.last), label: { show: true, position: 'top', fontSize: 9, color: '#3b6ea5' } },
   ],
 }))
 
@@ -138,11 +132,11 @@ const bumpOption = computed(() => {
   const axisMax = Math.max(5, Math.ceil(maxRank / 5) * 5)
   return {
     backgroundColor: 'transparent',
-    textStyle: { fontFamily: CHART_FONT.fontFamily, color: '#8aa6c8' },
+    textStyle: { fontFamily: CHART_FONT.fontFamily, color: '#666666' },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(4,16,32,.94)',
-      borderColor: 'rgba(56,189,248,.3)',
+      backgroundColor: 'rgba(255,255,255,.98)',
+      borderColor: '#dddddd',
     },
     legend: {
       right: 4,
@@ -158,8 +152,8 @@ const bumpOption = computed(() => {
       data: props.result.labels,
       boundaryGap: false,
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: 'rgba(56,189,248,.25)' } },
-      axisLabel: { color: '#8aa6c8' },
+      axisLine: { lineStyle: { color: '#e0e0e0' } },
+      axisLabel: { color: '#666666' },
     },
     yAxis: {
       type: 'value',
@@ -167,8 +161,8 @@ const bumpOption = computed(() => {
       min: 1,
       max: axisMax,
       interval: axisMax <= 10 ? 1 : axisMax / 5,
-      splitLine: { lineStyle: { color: 'rgba(56,189,248,.08)' } },
-      axisLabel: { color: '#6f8db0' },
+      splitLine: { lineStyle: { color: '#eeeeee' } },
+      axisLabel: { color: '#777777' },
     },
     series: trajectoryStudents.value.map((student, index) => ({
       name: student.name,
@@ -307,19 +301,19 @@ const printPage = () => window.print()
 </script>
 
 <template>
-  <div class="stage result-stage">
-    <div class="result-top">
-      <div class="result-title">
+  <div class="result-view">
+    <div class="view-header">
+      <div class="view-title">
         <el-input
           :model-value="className"
           class="class-name-input"
           @update:model-value="(value: string) => emit('update:className', value)"
         />
-        <span class="result-sub">
-          {{ result.labels.join('  →  ') }} · 全程参考 {{ result.counts.comparableAll }} 人
+        <span class="view-sub">
+          {{ result.labels.join(' → ') }} · 全程参考 {{ result.counts.comparableAll }} 人
         </span>
       </div>
-      <div class="result-actions">
+      <div class="view-actions">
         <el-button size="small" @click="emit('back')">返回场次</el-button>
         <el-button size="small" @click="dialogVisible = true">导出内容（{{ exportCount }}/5）</el-button>
         <el-button size="small" :loading="exporting" @click="emit('exportCsv')">CSV</el-button>
@@ -333,209 +327,229 @@ const printPage = () => window.print()
       </div>
     </div>
 
-    <div class="kpi-strip">
-      <div class="kpi">
-        <span class="kpi-label">考试场次</span>
-        <strong class="kpi-value">{{ result.labels.length }}</strong>
-        <span class="kpi-sub">{{ result.labels.join(' / ') }}</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">总分均分</span>
-        <strong class="kpi-value" :class="toneClass(result.totalStat.avgDelta)">
-          {{ fmtScore(result.totalStat.lastAvg) }}
-        </strong>
-        <span class="kpi-sub">{{ first }} {{ fmtScore(result.totalStat.firstAvg) }} · {{ fmtDelta(result.totalStat.avgDelta) }}</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">最高分</span>
-        <strong class="kpi-value">{{ fmtScore(result.totalStat.lastMax) }}</strong>
-        <span class="kpi-sub">{{ first }} {{ fmtScore(result.totalStat.firstMax) }}</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">总分名次</span>
-        <strong class="kpi-value"><em class="tone-up">↑{{ result.counts.totalUp }}</em> / <em class="tone-down">↓{{ result.counts.totalDown }}</em></strong>
-        <span class="kpi-sub">持平 {{ result.counts.totalFlat }} 人（{{ first }} → {{ last }}）</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">单科名次变化</span>
-        <strong class="kpi-value"><em class="tone-up">↑{{ result.counts.subjectUp }}</em> / <em class="tone-down">↓{{ result.counts.subjectDown }}</em></strong>
-        <span class="kpi-sub">{{ result.students.length }} 人 × {{ result.subjects.length }} 科</span>
-      </div>
-      <div class="kpi">
-        <span class="kpi-label">全程参考</span>
-        <strong class="kpi-value">{{ result.counts.comparableAll }}</strong>
-        <span class="kpi-sub">仅首场 {{ result.counts.firstOnly }} · 仅末场 {{ result.counts.lastOnly }}</span>
-      </div>
-    </div>
-
-    <div class="result-main">
-      <div class="result-col">
-        <PanelBox title="各科均分趋势" class="dense">
-          <template #extra>按场次顺序</template>
-          <ChartPanel :option="avgOption" :height="205" />
-        </PanelBox>
-        <PanelBox title="总分分数段" class="dense">
-          <template #extra>首场 vs 末场</template>
-          <ChartPanel :option="bucketOption" :height="200" />
-        </PanelBox>
-      </div>
-
-      <div class="result-col">
-        <PanelBox title="总分排名迁移" class="dense">
-          <template #extra>Top {{ trajectoryStudents.length }} 学生 · 名次越靠上越好</template>
-          <ChartPanel :option="bumpOption" :height="432" />
-        </PanelBox>
-      </div>
-
-      <div class="result-col">
-        <PanelBox title="进步榜 TOP5" class="dense">
-          <template #extra>{{ first }} → {{ last }}</template>
-          <div v-for="(student, index) in upTop" :key="student.key" class="mover-item">
-            <span class="mover-index">{{ index + 1 }}</span>
-            <span class="mover-name">{{ student.name }}</span>
-            <span class="mover-score">
-              {{ fmtScore(student.totals[0]) }} → {{ fmtScore(student.totals[student.totals.length - 1]) }}
-            </span>
-            <span class="mover-delta tone-up">{{ fmtRankDelta(student.totalRankDelta) }}</span>
+    <template v-if="view === 'rank'">
+      <div class="view-grid rank-grid">
+        <section class="card">
+          <div class="card-head">
+            <h3>总分排名迁移</h3>
+            <span>Top {{ trajectoryStudents.length }} 学生 · 名次越靠上越好</span>
           </div>
-        </PanelBox>
-        <PanelBox title="需关注 TOP5" class="dense">
-          <template #extra>{{ first }} → {{ last }}</template>
-          <div v-for="(student, index) in downTop" :key="student.key" class="mover-item">
-            <span class="mover-index">{{ index + 1 }}</span>
-            <span class="mover-name">{{ student.name }}</span>
-            <span class="mover-score">
-              {{ fmtScore(student.totals[0]) }} → {{ fmtScore(student.totals[student.totals.length - 1]) }}
-            </span>
-            <span class="mover-delta tone-down">{{ fmtRankDelta(student.totalRankDelta) }}</span>
+          <ChartPanel key="rank-chart" :option="bumpOption" :height="470" />
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <h3>名次升降</h3>
+            <span>{{ first }} → {{ last }}</span>
           </div>
-        </PanelBox>
-      </div>
-    </div>
-
-    <PanelBox class="result-bottom" dense>
-      <div class="result-tabs">
-        <button :class="{ active: tab === 'overview' }" @click="tab = 'overview'">科目统计</button>
-        <button :class="{ active: tab === 'summary' }" @click="tab = 'summary'">汇总矩阵</button>
-        <button :class="{ active: tab === 'subject' }" @click="tab = 'subject'">单科矩阵</button>
-        <button :class="{ active: tab === 'notes' }" @click="tab = 'notes'">数据说明</button>
-        <span class="muted small" style="margin-left: auto">
-          {{ result.students.length }} 人 · {{ result.subjects.length }} 科 · {{ result.labels.length }} 场
-        </span>
-      </div>
-
-      <div class="result-bottom-body">
-        <template v-if="tab === 'overview'">
-          <el-table :data="[...result.stats, result.totalStat]" size="small" height="210" border>
-            <el-table-column prop="subject" label="科目" width="90" fixed />
-            <el-table-column label="均分（首 → 末）" min-width="150">
-              <template #default="{ row }">{{ fmtScore(row.firstAvg) }} → {{ fmtScore(row.lastAvg) }}</template>
-            </el-table-column>
-            <el-table-column label="变化" width="80">
-              <template #default="{ row }"><span :class="toneClass(row.avgDelta)">{{ fmtDelta(row.avgDelta) }}</span></template>
-            </el-table-column>
-            <el-table-column label="最高（首 → 末）" min-width="140">
-              <template #default="{ row }">{{ fmtScore(row.firstMax) }} → {{ fmtScore(row.lastMax) }}</template>
-            </el-table-column>
-            <el-table-column label="最低（首 → 末）" min-width="140">
-              <template #default="{ row }">{{ fmtScore(row.firstMin) }} → {{ fmtScore(row.lastMin) }}</template>
-            </el-table-column>
-            <el-table-column label="名次↑" width="70"><template #default="{ row }"><span class="tone-up">{{ row.up }}</span></template></el-table-column>
-            <el-table-column label="名次↓" width="70"><template #default="{ row }"><span class="tone-down">{{ row.down }}</span></template></el-table-column>
-            <el-table-column prop="flat" label="持平" width="60" />
-            <el-table-column label="及格人数" width="100">
-              <template #default="{ row }">
-                {{ row.passMark == null ? '—' : `${row.firstPassCount ?? '—'} → ${row.lastPassCount ?? '—'}` }}
-              </template>
-            </el-table-column>
-          </el-table>
-        </template>
-
-        <template v-else-if="tab === 'summary'">
-          <div class="table-head">
-            <el-input v-model="query" placeholder="搜索姓名" clearable size="small" style="width: 180px" />
+          <div class="list-block">
+            <div class="list-title tone-up">进步 TOP5</div>
+            <div v-for="(student, index) in upTop" :key="`up-${student.key}`" class="rank-row">
+              <span class="rank-index">{{ index + 1 }}</span>
+              <span class="rank-name">{{ student.name }}</span>
+              <span class="rank-score">{{ fmtScore(student.totals[0]) }} → {{ fmtScore(student.totals[student.totals.length - 1]) }}</span>
+              <span class="rank-delta tone-up">{{ fmtRankDelta(student.totalRankDelta) }}</span>
+            </div>
           </div>
-          <el-table :data="filteredRows" size="small" height="180" border>
-            <el-table-column
-              v-for="col in summaryColumns"
-              :key="col.key"
-              :prop="col.key"
-              :label="col.label"
-              :width="col.width"
-              :min-width="col.minWidth"
-              sortable
-              :sort-method="(a: any, b: any) => sortBy(a, b, col)"
-            >
-              <template #default="{ row }">
-                <span v-if="col.kind === 'delta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtRankDelta(asNumber(col.get(row))) }}</span>
-                <span v-else-if="col.kind === 'scoreDelta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtDelta(asNumber(col.get(row))) }}</span>
-                <span v-else-if="col.kind === 'score'">{{ fmtScore(asNumber(col.get(row))) }}</span>
-                <span v-else-if="col.kind === 'rank'">{{ asNumber(col.get(row)) ?? '—' }}</span>
-                <span v-else>{{ col.get(row) || '' }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </template>
-
-        <template v-else-if="tab === 'subject'">
-          <div class="table-head">
-            <el-radio-group v-model="subject" size="small">
-              <el-radio-button v-for="item in result.subjects" :key="item" :value="item">{{ item }}</el-radio-button>
-            </el-radio-group>
-            <span class="muted small" v-if="currentStat">
-              均分 {{ fmtScore(currentStat.firstAvg) }} → {{ fmtScore(currentStat.lastAvg) }}
-              <em :class="toneClass(currentStat.avgDelta)">{{ fmtDelta(currentStat.avgDelta) }}</em>
-              · 名次↑{{ currentStat.up }} / ↓{{ currentStat.down }}
-            </span>
+          <div class="list-block">
+            <div class="list-title tone-down">需关注 TOP5</div>
+            <div v-for="(student, index) in downTop" :key="`down-${student.key}`" class="rank-row">
+              <span class="rank-index">{{ index + 1 }}</span>
+              <span class="rank-name">{{ student.name }}</span>
+              <span class="rank-score">{{ fmtScore(student.totals[0]) }} → {{ fmtScore(student.totals[student.totals.length - 1]) }}</span>
+              <span class="rank-delta tone-down">{{ fmtRankDelta(student.totalRankDelta) }}</span>
+            </div>
           </div>
-          <el-table :data="filteredRows" size="small" height="170" border>
-            <el-table-column
-              v-for="col in subjectColumns"
-              :key="col.key"
-              :prop="col.key"
-              :label="col.label"
-              :width="col.width"
-              :min-width="col.minWidth"
-              sortable
-              :sort-method="(a: any, b: any) => sortBy(a, b, col)"
-            >
-              <template #default="{ row }">
-                <span v-if="col.kind === 'delta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtRankDelta(asNumber(col.get(row))) }}</span>
-                <span v-else-if="col.kind === 'scoreDelta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtDelta(asNumber(col.get(row))) }}</span>
-                <span v-else-if="col.kind === 'score'">{{ fmtScore(asNumber(col.get(row))) }}</span>
-                <span v-else-if="col.kind === 'rank'">{{ asNumber(col.get(row)) ?? '—' }}</span>
-                <span v-else>{{ col.get(row) || '' }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </template>
-
-        <template v-else>
-          <el-row :gutter="16">
-            <el-col :span="12">
-              <ul v-if="result.warnings.length" class="warning-list">
-                <li v-for="(warning, index) in result.warnings" :key="index">{{ warning }}</li>
-              </ul>
-              <p v-else class="muted">没有发现明显的数据问题。</p>
-            </el-col>
-            <el-col :span="12">
-              <ul class="note-list">
-                <li>场次顺序：{{ result.labels.join(' → ') }}；第一场为基准。</li>
-                <li>排名变化 = 首场名次 − 末场名次；分数变化 = 末场分数 − 首场分数。</li>
-                <li>中间场次展示分数与排名，不单独计算变化。</li>
-                <li>排名方式：{{ result.options.rankMode === 'competition' ? '并列名次（同分同名次、后续跳号）' : '顺序名次（同分按顺序编号）' }}。</li>
-                <li>姓名按“姓名列”匹配；缺场学生对应位置为空。</li>
-              </ul>
-            </el-col>
-          </el-row>
-        </template>
+        </section>
       </div>
-    </PanelBox>
+    </template>
 
-    <div class="result-footer">
-      <span>数据来源：{{ result.fileName }}</span>
-      <el-button link type="primary" @click="emit('reset')">重新开始</el-button>
-    </div>
+    <template v-else-if="view === 'trend'">
+      <section class="card">
+        <div class="card-head">
+          <h3>各科平均分趋势</h3>
+          <span>按场次顺序</span>
+        </div>
+        <ChartPanel key="trend-chart" :option="avgOption" :height="430" />
+      </section>
+      <section class="card mt-16">
+        <div class="card-head">
+          <h3>各科均分明细</h3>
+        </div>
+        <table class="simple-table">
+          <thead>
+            <tr>
+              <th>科目</th>
+              <th v-for="label in result.labels" :key="label">{{ label }}</th>
+              <th>首末变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="stat in result.stats" :key="stat.subject">
+              <td>{{ stat.subject }}</td>
+              <td v-for="(label, index) in result.labels" :key="`${stat.subject}-${label}`">
+                {{ fmtScore(result.examStats[index]?.subjectAvg[stat.subject]) }}
+              </td>
+              <td :class="toneClass(stat.avgDelta)">{{ fmtDelta(stat.avgDelta) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </template>
+
+    <template v-else-if="view === 'bucket'">
+      <section class="card">
+        <div class="card-head">
+          <h3>总分分数段：首场 vs 末场</h3>
+          <span>每 {{ result.options.bucketSize }} 分一段</span>
+        </div>
+        <ChartPanel key="bucket-chart" :option="bucketOption" :height="470" />
+      </section>
+      <section class="card mt-16">
+        <div class="card-head"><h3>分段人数</h3></div>
+        <table class="simple-table">
+          <thead>
+            <tr>
+              <th>分数段</th>
+              <th>{{ first }}</th>
+              <th>{{ last }}</th>
+              <th>变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="bucket in result.buckets" :key="bucket.label">
+              <td>{{ bucket.label }}</td>
+              <td>{{ bucket.first }}</td>
+              <td>{{ bucket.last }}</td>
+              <td :class="toneClass(bucket.last - bucket.first)">{{ bucket.last - bucket.first }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </template>
+
+    <template v-else-if="view === 'stats'">
+      <section class="card">
+        <div class="card-head">
+          <h3>科目统计</h3>
+          <span>{{ first }} → {{ last }}</span>
+        </div>
+        <el-table :data="[...result.stats, result.totalStat]" size="small" border>
+          <el-table-column prop="subject" label="科目" width="100" />
+          <el-table-column label="均分（首 → 末）" min-width="160">
+            <template #default="{ row }">{{ fmtScore(row.firstAvg) }} → {{ fmtScore(row.lastAvg) }}</template>
+          </el-table-column>
+          <el-table-column label="变化" width="90">
+            <template #default="{ row }"><span :class="toneClass(row.avgDelta)">{{ fmtDelta(row.avgDelta) }}</span></template>
+          </el-table-column>
+          <el-table-column label="最高（首 → 末）" min-width="150">
+            <template #default="{ row }">{{ fmtScore(row.firstMax) }} → {{ fmtScore(row.lastMax) }}</template>
+          </el-table-column>
+          <el-table-column label="最低（首 → 末）" min-width="150">
+            <template #default="{ row }">{{ fmtScore(row.firstMin) }} → {{ fmtScore(row.lastMin) }}</template>
+          </el-table-column>
+          <el-table-column label="名次↑" width="80">
+            <template #default="{ row }"><span class="tone-up">{{ row.up }}</span></template>
+          </el-table-column>
+          <el-table-column label="名次↓" width="80">
+            <template #default="{ row }"><span class="tone-down">{{ row.down }}</span></template>
+          </el-table-column>
+          <el-table-column prop="flat" label="持平" width="70" />
+          <el-table-column label="及格人数" width="110">
+            <template #default="{ row }">
+              {{ row.passMark == null ? '—' : `${row.firstPassCount ?? '—'} → ${row.lastPassCount ?? '—'}` }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </template>
+
+    <template v-else-if="view === 'summary'">
+      <section class="card">
+        <div class="card-head">
+          <h3>汇总矩阵</h3>
+          <el-input v-model="query" placeholder="搜索姓名" clearable size="small" style="width: 180px" />
+        </div>
+        <el-table :data="filteredRows" size="small" border height="calc(100vh - 230px)">
+          <el-table-column
+            v-for="col in summaryColumns"
+            :key="col.key"
+            :prop="col.key"
+            :label="col.label"
+            :width="col.width"
+            :min-width="col.minWidth"
+            sortable
+            :sort-method="(a: any, b: any) => sortBy(a, b, col)"
+          >
+            <template #default="{ row }">
+              <span v-if="col.kind === 'delta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtRankDelta(asNumber(col.get(row))) }}</span>
+              <span v-else-if="col.kind === 'scoreDelta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtDelta(asNumber(col.get(row))) }}</span>
+              <span v-else-if="col.kind === 'score'">{{ fmtScore(asNumber(col.get(row))) }}</span>
+              <span v-else-if="col.kind === 'rank'">{{ asNumber(col.get(row)) ?? '—' }}</span>
+              <span v-else>{{ col.get(row) || '' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </template>
+
+    <template v-else-if="view === 'subject'">
+      <section class="card">
+        <div class="card-head">
+          <h3>单科矩阵</h3>
+          <el-radio-group v-model="subject" size="small">
+            <el-radio-button v-for="item in result.subjects" :key="item" :value="item">{{ item }}</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div v-if="currentStat" class="subject-summary">
+          均分 {{ fmtScore(currentStat.firstAvg) }} → {{ fmtScore(currentStat.lastAvg) }}
+          <span :class="toneClass(currentStat.avgDelta)">{{ fmtDelta(currentStat.avgDelta) }}</span>
+          · 名次上升 {{ currentStat.up }} / 下降 {{ currentStat.down }} / 持平 {{ currentStat.flat }}
+        </div>
+        <el-table :data="filteredRows" size="small" border height="calc(100vh - 270px)">
+          <el-table-column
+            v-for="col in subjectColumns"
+            :key="col.key"
+            :prop="col.key"
+            :label="col.label"
+            :width="col.width"
+            :min-width="col.minWidth"
+            sortable
+            :sort-method="(a: any, b: any) => sortBy(a, b, col)"
+          >
+            <template #default="{ row }">
+              <span v-if="col.kind === 'delta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtRankDelta(asNumber(col.get(row))) }}</span>
+              <span v-else-if="col.kind === 'scoreDelta'" :class="toneClass(asNumber(col.get(row)))">{{ fmtDelta(asNumber(col.get(row))) }}</span>
+              <span v-else-if="col.kind === 'score'">{{ fmtScore(asNumber(col.get(row))) }}</span>
+              <span v-else-if="col.kind === 'rank'">{{ asNumber(col.get(row)) ?? '—' }}</span>
+              <span v-else>{{ col.get(row) || '' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </template>
+
+    <template v-else>
+      <div class="view-grid notes-grid">
+        <section class="card">
+          <div class="card-head"><h3>数据提醒</h3></div>
+          <ul v-if="result.warnings.length" class="plain-list warning">
+            <li v-for="(warning, index) in result.warnings" :key="index">{{ warning }}</li>
+          </ul>
+          <p v-else class="muted">没有发现明显的数据问题。</p>
+        </section>
+        <section class="card">
+          <div class="card-head"><h3>口径说明</h3></div>
+          <ul class="plain-list">
+            <li>场次顺序：{{ result.labels.join(' → ') }}；第一场为基准。</li>
+            <li>排名变化 = 首场名次 − 末场名次；分数变化 = 末场分数 − 首场分数。</li>
+            <li>中间场次展示分数与排名，不单独计算变化。</li>
+            <li>排名方式：{{ result.options.rankMode === 'competition' ? '并列名次（同分同名次、后续跳号）' : '顺序名次（同分按顺序编号）' }}。</li>
+            <li>姓名按“姓名列”匹配；缺场学生对应位置为空。</li>
+            <li>没有原表排名列也可以分析，名次由系统按分数自动计算。</li>
+          </ul>
+        </section>
+      </div>
+    </template>
 
     <el-dialog v-model="dialogVisible" title="导出内容" width="420px">
       <div class="export-dialog">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type {
   AnalysisOptions,
@@ -28,7 +28,6 @@ import UploadStage from './components/UploadStage.vue'
 import MappingStage from './components/MappingStage.vue'
 import SelectStage from './components/SelectStage.vue'
 import ResultStage from './components/ResultStage.vue'
-import ScaleScreen from './components/ScaleScreen.vue'
 
 type Stage = 'upload' | 'mapping' | 'select' | 'result'
 
@@ -90,17 +89,21 @@ const result = computed(() => {
   }
 })
 
-const stepIndex = computed(() => {
-  const map: Record<Stage, number> = { upload: 0, mapping: 1, select: 2, result: 3 }
-  return map[stage.value]
-})
 
 const showError = (message: string) => {
   error.value = message
   ElMessage({ type: 'error', message, grouping: true })
 }
 
+const invalidateResult = () => {
+  if (exams.value.length) {
+    exams.value = []
+    saved.value = false
+  }
+}
+
 const updateDraft = (id: string, patch: Partial<ExamDraft>) => {
+  invalidateResult()
   drafts.value = drafts.value.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft))
 }
 
@@ -133,6 +136,7 @@ const addFiles = async (files: File[]) => {
     }
   }
   if (created.length) {
+    invalidateResult()
     drafts.value = [...drafts.value, ...created]
     if (!activeId.value) activeId.value = created[0].id
     selectedIds.value = [...selectedIds.value, ...created.map((draft) => draft.id)]
@@ -141,6 +145,7 @@ const addFiles = async (files: File[]) => {
 }
 
 const removeDraft = (id: string) => {
+  invalidateResult()
   drafts.value = drafts.value.filter((draft) => draft.id !== id)
   selectedIds.value = selectedIds.value.filter((item) => item !== id)
   if (activeId.value === id) activeId.value = drafts.value[0]?.id ?? null
@@ -214,6 +219,7 @@ const runAnalysis = () => {
     options.value = { ...options.value, fullMarks, passMarks }
     exams.value = picked
     saved.value = false
+    resultView.value = 'rank'
     stage.value = 'result'
   } catch (err) {
     showError(err instanceof Error ? err.message : String(err))
@@ -238,6 +244,7 @@ const handleDemo = (to: 'mapping' | 'select' | 'result' = 'result') => {
   saved.value = false
   if (to === 'result') {
     exams.value = demo.exams
+    resultView.value = 'rank'
     stage.value = 'result'
   } else {
     stage.value = to
@@ -317,6 +324,7 @@ const restoreHistory = (item: HistoryItem) => {
   selection.value = item.selection
   className.value = item.title
   saved.value = true
+  resultView.value = 'rank'
   stage.value = 'result'
 }
 
@@ -388,62 +396,108 @@ const doExportCsv = () => {
   exportCsv(result.value, className.value.trim() || '成绩对比')
 }
 
-const now = ref(new Date())
-let timer: number | undefined
-const navItems = ['上传成绩单', '确认字段', '选择场次', '查看结果']
-const clock = computed(() => {
-  const date = now.value
-  const pad = (value: number) => String(value).padStart(2, '0')
-  const week = ['日', '一', '二', '三', '四', '五', '六'][date.getDay()]
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} 周${week} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+type ResultView = 'rank' | 'trend' | 'bucket' | 'stats' | 'summary' | 'subject' | 'notes'
+const resultView = ref<ResultView>('rank')
+
+const menuGroups = computed(() => [
+  {
+    title: '数据准备',
+    items: [
+      { key: 'upload', label: '上传成绩单', enabled: true, badge: String(drafts.value.length || '') },
+      { key: 'mapping', label: '确认字段', enabled: drafts.value.length >= 2, badge: '' },
+      { key: 'select', label: '选择场次', enabled: drafts.value.length >= 2, badge: '' },
+    ],
+  },
+  {
+    title: '分析结果',
+    items: [
+      { key: 'rank', label: '排名浮动', enabled: Boolean(result.value), badge: '' },
+      { key: 'trend', label: '各科趋势', enabled: Boolean(result.value), badge: '' },
+      { key: 'bucket', label: '分数段分布', enabled: Boolean(result.value), badge: '' },
+      { key: 'stats', label: '科目统计', enabled: Boolean(result.value), badge: '' },
+      { key: 'summary', label: '汇总矩阵', enabled: Boolean(result.value), badge: '' },
+      { key: 'subject', label: '单科矩阵', enabled: Boolean(result.value), badge: '' },
+      { key: 'notes', label: '数据说明', enabled: Boolean(result.value), badge: String(result.value?.warnings.length || '') },
+    ],
+  },
+])
+
+const activeKey = computed(() => (stage.value === 'result' ? resultView.value : stage.value))
+
+const currentTitle = computed(() => {
+  const all = menuGroups.value.flatMap((group) => group.items)
+  return all.find((item) => item.key === activeKey.value)?.label ?? '成绩单数据分析'
 })
 
+const goMenu = (key: string) => {
+  if (key === 'upload' || key === 'mapping' || key === 'select') {
+    if (key !== 'upload' && drafts.value.length < 2) return
+    if (key === 'mapping' && !activeId.value) activeId.value = drafts.value[0]?.id ?? null
+    error.value = ''
+    stage.value = key
+    return
+  }
+  if (!result.value) return
+  resultView.value = key as ResultView
+  stage.value = 'result'
+}
+
 onMounted(() => {
-  timer = window.setInterval(() => {
-    now.value = new Date()
-  }, 1000)
-  const demo = new URLSearchParams(window.location.search).get('demo')
+  const params = new URLSearchParams(window.location.search)
+  const demo = params.get('demo')
   if (demo === '1') handleDemo('result')
   else if (demo === 'mapping') handleDemo('mapping')
   else if (demo === 'select') handleDemo('select')
-})
 
-onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
+  const view = params.get('view')
+  const allowed: ResultView[] = ['rank', 'trend', 'bucket', 'stats', 'summary', 'subject', 'notes']
+  if (view && allowed.includes(view as ResultView) && result.value) {
+    resultView.value = view as ResultView
+    stage.value = 'result'
+  }
 })
 </script>
-
 <template>
-  <ScaleScreen>
-    <div class="screen">
-      <header class="screen-header">
-        <div class="header-left">
-          <div class="logo-orb">成</div>
-          <div class="brand-text">
-            <h1>成绩单数据分析</h1>
-            <p>GRADE SHEET ANALYTICS · 多场横向对比</p>
-          </div>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-dot">成</span>
+        <div>
+          <strong>成绩单数据分析</strong>
+          <span>多场横向对比</span>
         </div>
-        <nav class="stage-nav">
-          <span
-            v-for="(item, index) in navItems"
-            :key="item"
-            class="stage-nav-item"
-            :class="{ active: stepIndex === index, done: stepIndex > index }"
+      </div>
+
+      <nav class="sidebar-nav">
+        <div v-for="group in menuGroups" :key="group.title" class="nav-group">
+          <div class="nav-group-title">{{ group.title }}</div>
+          <button
+            v-for="item in group.items"
+            :key="item.key"
+            type="button"
+            class="nav-item"
+            :class="{ active: activeKey === item.key }"
+            :disabled="!item.enabled"
+            @click="goMenu(item.key)"
           >
-            <i>{{ String(index + 1).padStart(2, '0') }}</i>
-            {{ item }}
-          </span>
-        </nav>
-        <div class="header-right">
-          <span class="live-dot" />
-          <span class="header-time">{{ clock }}</span>
+            <span>{{ item.label }}</span>
+            <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">本地处理 · 成绩不上传</div>
+    </aside>
+
+    <div class="workspace">
+      <header class="workspace-head">
+        <div class="crumb">{{ currentTitle }}</div>
+        <div class="workspace-meta">
+          {{ result ? result.labels.join(' → ') : drafts.length ? `${drafts.length} 份成绩单` : '尚未接入成绩单' }}
         </div>
       </header>
 
-      <main class="screen-body" :class="`stage-${stage}`">
+      <main class="workspace-body">
         <UploadStage
           v-if="stage === 'upload'"
           :drafts="drafts"
@@ -493,6 +547,7 @@ onBeforeUnmount(() => {
         <ResultStage
           v-else-if="stage === 'result' && result"
           :result="result"
+          :view="resultView"
           :class-name="className"
           :selection="selection"
           :exporting="exporting"
@@ -506,17 +561,15 @@ onBeforeUnmount(() => {
           @reset="reset"
         />
 
-        <div v-else-if="stage === 'result'" class="screen-empty">
-          <p>{{ error || '暂无可分析的数据，请返回重新选择。' }}</p>
-          <el-button type="primary" @click="stage = 'select'">返回选择</el-button>
+        <div v-else class="placeholder">
+          <p>{{ error || '暂无可分析的数据，请先上传成绩单。' }}</p>
+          <el-button @click="stage = 'upload'">去上传</el-button>
         </div>
       </main>
-
-      <footer class="screen-footer">
-        <span>DATA SOURCE · 浏览器本地解析，成绩不上传服务器</span>
-        <span>{{ drafts.length ? `${drafts.length} 场成绩单已接入` : '等待接入成绩单' }}</span>
-      </footer>
     </div>
-  </ScaleScreen>
+  </div>
 </template>
+
+
+
 
