@@ -1,61 +1,66 @@
 import type {
   AnalysisOptions,
-  AnalysisResult,
-  BucketStat,
+  BucketRow,
   ExamData,
-  StudentAnalysis,
-  StudentRecord,
-  SubjectStat,
+  SeriesAnalysis,
+  SeriesExamStat,
+  SeriesStudent,
+  SeriesSubjectStat,
 } from '../types'
 import { average, round2 } from './format'
 
-interface RankEntry {
-  key: string
-  score: number
-}
-
-function rankMap(entries: RankEntry[], mode: AnalysisOptions['rankMode']): Record<string, number> {
-  const sorted = [...entries].sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
-  const result: Record<string, number> = {}
+function rankMap(entries: { index: number; score: number }[], mode: AnalysisOptions['rankMode']): Record<number, number> {
+  const sorted = [...entries].sort((a, b) => b.score - a.score || a.index - b.index)
+  const result: Record<number, number> = {}
   if (mode === 'sequential') {
-    sorted.forEach((entry, index) => {
-      result[entry.key] = index + 1
+    sorted.forEach((entry, position) => {
+      result[entry.index] = position + 1
     })
     return result
   }
   let previous: number | null = null
   let rank = 0
-  sorted.forEach((entry, index) => {
+  sorted.forEach((entry, position) => {
     if (previous == null || Math.abs(entry.score - previous) > 1e-9) {
-      rank = index + 1
+      rank = position + 1
       previous = entry.score
     }
-    result[entry.key] = rank
+    result[entry.index] = rank
   })
   return result
 }
 
-function buildRanks(exam: ExamData, subjects: string[], mode: AnalysisOptions['rankMode']) {
-  const ranks: Record<string, Record<string, number>> = {}
+function examRanks(exam: ExamData, subjects: string[], mode: AnalysisOptions['rankMode']) {
+  const subjectRanks: Record<string, Record<number, number>> = {}
   for (const subject of subjects) {
-    const entries: RankEntry[] = []
+    const entries: { index: number; score: number }[] = []
     exam.students.forEach((student, index) => {
-      const score = student.scores[subject]
-      if (score != null) entries.push({ key: `${index}`, score })
+      const value = student.scores[subject]
+      if (value != null) entries.push({ index, score: value })
     })
-    ranks[subject] = rankMap(entries, mode)
+    subjectRanks[subject] = rankMap(entries, mode)
   }
-  const totalEntries: RankEntry[] = []
+  const totalEntries: { index: number; score: number }[] = []
   exam.students.forEach((student, index) => {
-    if (student.total != null) totalEntries.push({ key: `${index}`, score: student.total })
+    if (student.total != null) totalEntries.push({ index, score: student.total })
   })
-  ranks['总分'] = rankMap(totalEntries, mode)
-  return ranks
+  const totalRanks = rankMap(totalEntries, mode)
+  return { subjectRanks, totalRanks }
+}
+
+function positionsByName(exam: ExamData): Map<string, number[]> {
+  const map = new Map<string, number[]>()
+  exam.students.forEach((student, index) => {
+    const list = map.get(student.name) ?? []
+    list.push(index)
+    map.set(student.name, list)
+  })
+  return map
 }
 
 function bucketize(values: (number | null)[], size: number): Map<string, number> {
   const map = new Map<string, number>()
-  const clean = values.filter((v): v is number => v != null)
+  const clean = values.filter((value): value is number => value != null)
   const max = clean.length ? Math.max(...clean) : 0
   const upper = Math.max(size, Math.ceil((max + 1) / size) * size)
   for (let start = 0; start < upper; start += size) {
@@ -69,251 +74,268 @@ function bucketize(values: (number | null)[], size: number): Map<string, number>
   return map
 }
 
-function makeStat(
-  subject: string,
-  base: StudentRecord[],
-  target: StudentRecord[],
-  deltas: (number | null)[],
-  options: AnalysisOptions,
-): SubjectStat {
-  const baseValues = base.map((s) => (subject === '总分' ? s.total : s.scores[subject]))
-  const targetValues = target.map((s) => (subject === '总分' ? s.total : s.scores[subject]))
-  const fullMark = options.fullMarks[subject] ?? null
-  const passMark = options.passMarks[subject] ?? null
-  const up = deltas.filter((d) => d != null && d > 0).length
-  const down = deltas.filter((d) => d != null && d < 0).length
-  const flat = deltas.filter((d) => d === 0).length
-  const baseAvg = average(baseValues)
-  const targetAvg = average(targetValues)
+function buildExamStat(exam: ExamData, subjects: string[]): SeriesExamStat {
+  const totals = exam.students.map((student) => student.total).filter((value): value is number => value != null)
+  const subjectAvg: Record<string, number | null> = {}
+  for (const subject of subjects) {
+    const avg = average(exam.students.map((student) => student.scores[subject]))
+    subjectAvg[subject] = avg == null ? null : round2(avg)
+  }
   return {
-    subject,
-    fullMark,
-    passMark,
-    baseCount: baseValues.filter((v) => v != null).length,
-    targetCount: targetValues.filter((v) => v != null).length,
-    baseAvg: baseAvg == null ? null : round2(baseAvg),
-    targetAvg: targetAvg == null ? null : round2(targetAvg),
-    avgDelta: baseAvg == null || targetAvg == null ? null : round2(targetAvg - baseAvg),
-    baseMax: baseValues.filter((v): v is number => v != null).length
-      ? Math.max(...baseValues.filter((v): v is number => v != null))
-      : null,
-    targetMax: targetValues.filter((v): v is number => v != null).length
-      ? Math.max(...targetValues.filter((v): v is number => v != null))
-      : null,
-    baseMin: baseValues.filter((v): v is number => v != null).length
-      ? Math.min(...baseValues.filter((v): v is number => v != null))
-      : null,
-    targetMin: targetValues.filter((v): v is number => v != null).length
-      ? Math.min(...targetValues.filter((v): v is number => v != null))
-      : null,
-    up,
-    down,
-    flat,
-    basePassCount:
-      passMark == null ? null : baseValues.filter((v) => v != null && v >= passMark).length,
-    targetPassCount:
-      passMark == null ? null : targetValues.filter((v) => v != null && v >= passMark).length,
+    label: exam.label,
+    count: exam.students.length,
+    totalAvg: totals.length ? round2(totals.reduce((sum, value) => sum + value, 0) / totals.length) : null,
+    totalMax: totals.length ? Math.max(...totals) : null,
+    totalMin: totals.length ? Math.min(...totals) : null,
+    subjectAvg,
   }
 }
 
-/** 对比两场考试，计算每个学生、每个科目的排名与分数变化 */
-export function analyze(base: ExamData, target: ExamData, options: AnalysisOptions): AnalysisResult {
+function buildSubjectStat(
+  subject: string,
+  students: SeriesStudent[],
+  options: AnalysisOptions,
+): SeriesSubjectStat {
+  const firstScores = students.map((student) => student.scores[subject]?.[0] ?? null)
+  const lastIndex = students[0]?.scores[subject]?.length ? students[0].scores[subject].length - 1 : 0
+  const lastScores = students.map((student) => student.scores[subject]?.[lastIndex] ?? null)
+  const firstClean = firstScores.filter((value): value is number => value != null)
+  const lastClean = lastScores.filter((value): value is number => value != null)
+  const firstAvg = average(firstScores)
+  const lastAvg = average(lastScores)
+  const passMark = options.passMarks[subject] ?? null
+  const up = students.filter((student) => {
+    const delta = student.rankDeltas[subject]
+    return delta != null && delta > 0
+  }).length
+  const down = students.filter((student) => {
+    const delta = student.rankDeltas[subject]
+    return delta != null && delta < 0
+  }).length
+  const flat = students.filter((student) => student.rankDeltas[subject] === 0).length
+  return {
+    subject,
+    fullMark: options.fullMarks[subject] ?? null,
+    passMark,
+    firstAvg: firstAvg == null ? null : round2(firstAvg),
+    lastAvg: lastAvg == null ? null : round2(lastAvg),
+    avgDelta: firstAvg == null || lastAvg == null ? null : round2(lastAvg - firstAvg),
+    firstMax: firstClean.length ? Math.max(...firstClean) : null,
+    lastMax: lastClean.length ? Math.max(...lastClean) : null,
+    firstMin: firstClean.length ? Math.min(...firstClean) : null,
+    lastMin: lastClean.length ? Math.min(...lastClean) : null,
+    up,
+    down,
+    flat,
+    firstPassCount: passMark == null ? null : firstClean.filter((value) => value >= passMark).length,
+    lastPassCount: passMark == null ? null : lastClean.filter((value) => value >= passMark).length,
+  }
+}
+
+function buildTotalStat(students: SeriesStudent[], options: AnalysisOptions): SeriesSubjectStat {
+  const last = students[0]?.totals?.length ? students[0].totals.length - 1 : 0
+  const firstClean = students.map((s) => s.totals[0]).filter((v): v is number => v != null)
+  const lastClean = students.map((s) => s.totals[last]).filter((v): v is number => v != null)
+  const firstAvg = average(students.map((s) => s.totals[0]))
+  const lastAvg = average(students.map((s) => s.totals[last]))
+  return {
+    subject: '总分',
+    fullMark: options.fullMarks['总分'] ?? null,
+    passMark: null,
+    firstAvg: firstAvg == null ? null : round2(firstAvg),
+    lastAvg: lastAvg == null ? null : round2(lastAvg),
+    avgDelta: firstAvg == null || lastAvg == null ? null : round2(lastAvg - firstAvg),
+    firstMax: firstClean.length ? Math.max(...firstClean) : null,
+    lastMax: lastClean.length ? Math.max(...lastClean) : null,
+    firstMin: firstClean.length ? Math.min(...firstClean) : null,
+    lastMin: lastClean.length ? Math.min(...lastClean) : null,
+    up: students.filter((s) => s.totalRankDelta != null && s.totalRankDelta > 0).length,
+    down: students.filter((s) => s.totalRankDelta != null && s.totalRankDelta < 0).length,
+    flat: students.filter((s) => s.totalRankDelta === 0).length,
+    firstPassCount: null,
+    lastPassCount: null,
+  }
+}
+
+/** 多场考试横向对比：名次与分数变化均以“第一场（基准）”为参照 */
+export function analyzeSeries(exams: ExamData[], options: AnalysisOptions): SeriesAnalysis {
+  if (exams.length < 2) throw new Error('至少选择 2 场考试才能对比')
+  const labels = exams.map((exam) => exam.label)
+  const lastIndex = exams.length - 1
+
   const subjects: string[] = []
-  for (const subject of [...base.subjects, ...target.subjects]) {
-    if (!subjects.includes(subject)) subjects.push(subject)
-  }
-
-  const baseRanks = buildRanks(base, subjects, options.rankMode)
-  const targetRanks = buildRanks(target, subjects, options.rankMode)
-
-  const group = (exam: ExamData) => {
-    const map = new Map<string, { student: StudentRecord; index: number }[]>()
-    exam.students.forEach((student, index) => {
-      const list = map.get(student.name) ?? []
-      list.push({ student, index })
-      map.set(student.name, list)
-    })
-    return map
-  }
-  const baseGroups = group(base)
-  const targetGroups = group(target)
-
-  const names: string[] = []
-  base.students.forEach((student) => {
-    if (!names.includes(student.name)) names.push(student.name)
-  })
-  target.students.forEach((student) => {
-    if (!names.includes(student.name)) names.push(student.name)
-  })
-
-  const students: StudentAnalysis[] = []
-  let comparable = 0
-  let baseOnly = 0
-  let targetOnly = 0
-  let totalUp = 0
-  let totalDown = 0
-  let totalFlat = 0
-  let subjectUp = 0
-  let subjectDown = 0
-
-  for (const name of names) {
-    const baseList = baseGroups.get(name) ?? []
-    const targetList = targetGroups.get(name) ?? []
-    const size = Math.max(baseList.length, targetList.length)
-    for (let k = 0; k < size; k += 1) {
-      const baseItem = baseList[k]
-      const targetItem = targetList[k]
-      const baseStudent = baseItem?.student ?? null
-      const targetStudent = targetItem?.student ?? null
-      if (!baseStudent && !targetStudent) continue
-      if (baseStudent && !targetStudent) baseOnly += 1
-      if (!baseStudent && targetStudent) targetOnly += 1
-      if (baseStudent && targetStudent) comparable += 1
-
-      const baseScores: Record<string, number | null> = {}
-      const targetScores: Record<string, number | null> = {}
-      const baseSubjectRanks: Record<string, number | null> = {}
-      const targetSubjectRanks: Record<string, number | null> = {}
-      const scoreDeltas: Record<string, number | null> = {}
-      const rankDeltas: Record<string, number | null> = {}
-      let upCount = 0
-      let downCount = 0
-
-      for (const subject of subjects) {
-        const baseScore = baseStudent ? baseStudent.scores[subject] ?? null : null
-        const targetScore = targetStudent ? targetStudent.scores[subject] ?? null : null
-        baseScores[subject] = baseScore
-        targetScores[subject] = targetScore
-        const baseRank = baseStudent && baseScore != null ? baseRanks[subject][`${baseItem.index}`] ?? null : null
-        const targetRank =
-          targetStudent && targetScore != null ? targetRanks[subject][`${targetItem.index}`] ?? null : null
-        baseSubjectRanks[subject] = baseRank
-        targetSubjectRanks[subject] = targetRank
-        scoreDeltas[subject] =
-          baseScore == null || targetScore == null ? null : round2(targetScore - baseScore)
-        const rankDelta = baseRank == null || targetRank == null ? null : baseRank - targetRank
-        rankDeltas[subject] = rankDelta
-        if (rankDelta != null) {
-          if (rankDelta > 0) {
-            upCount += 1
-            subjectUp += 1
-          } else if (rankDelta < 0) {
-            downCount += 1
-            subjectDown += 1
-          }
-        }
-      }
-
-      const baseTotalRank =
-        baseStudent && baseStudent.total != null ? baseRanks['总分'][`${baseItem.index}`] ?? null : null
-      const targetTotalRank =
-        targetStudent && targetStudent.total != null
-          ? targetRanks['总分'][`${targetItem.index}`] ?? null
-          : null
-      const totalDelta =
-        baseStudent?.total == null || targetStudent?.total == null
-          ? null
-          : round2(targetStudent.total - baseStudent.total)
-      const totalRankDelta =
-        baseTotalRank == null || targetTotalRank == null ? null : baseTotalRank - targetTotalRank
-      if (totalRankDelta != null) {
-        if (totalRankDelta > 0) totalUp += 1
-        else if (totalRankDelta < 0) totalDown += 1
-        else totalFlat += 1
-      }
-
-      const note = !baseStudent ? '仅对比考试有成绩' : !targetStudent ? '仅基准考试有成绩' : ''
-      students.push({
-        key: `${name}#${k}`,
-        name: size > 1 ? `${name}(${k + 1})` : name,
-        inBase: Boolean(baseStudent),
-        inTarget: Boolean(targetStudent),
-        baseScores,
-        targetScores,
-        baseRanks: baseSubjectRanks,
-        targetRanks: targetSubjectRanks,
-        baseTotal: baseStudent?.total ?? null,
-        targetTotal: targetStudent?.total ?? null,
-        baseTotalRank,
-        targetTotalRank,
-        baseSrcRank: baseStudent?.srcRank ?? null,
-        targetSrcRank: targetStudent?.srcRank ?? null,
-        scoreDeltas,
-        rankDeltas,
-        totalDelta,
-        totalRankDelta,
-        upCount,
-        downCount,
-        note,
-      })
+  for (const exam of exams) {
+    for (const subject of exam.subjects) {
+      if (!subjects.includes(subject)) subjects.push(subject)
     }
   }
 
+  const rankInfo = exams.map((exam) => examRanks(exam, subjects, options.rankMode))
+  const positions = exams.map((exam) => positionsByName(exam))
+  const studentMaps = exams.map((exam) => exam.students)
+
+  const keys: string[] = []
+  const nameOrder: string[] = []
+  for (const exam of exams) {
+    for (const student of exam.students) {
+      if (!nameOrder.includes(student.name)) nameOrder.push(student.name)
+    }
+  }
+
+  for (const name of nameOrder) {
+    let maxCount = 0
+    for (const map of positions) maxCount = Math.max(maxCount, map.get(name)?.length ?? 0)
+    for (let k = 0; k < maxCount; k += 1) keys.push(`${name}#${k}`)
+  }
+
+  const students: SeriesStudent[] = []
+  for (const key of keys) {
+    const [name, rawIndex] = key.split('#')
+    const occurrence = Number(rawIndex)
+    const scores: Record<string, (number | null)[]> = {}
+    const ranks: Record<string, (number | null)[]> = {}
+    const totals: (number | null)[] = []
+    const totalRanks: (number | null)[] = []
+    const inExam: boolean[] = []
+
+    subjects.forEach((subject) => {
+      scores[subject] = []
+      ranks[subject] = []
+    })
+
+    exams.forEach((_, examIndex) => {
+      const index = positions[examIndex].get(name)?.[occurrence]
+      if (index == null) {
+        subjects.forEach((subject) => {
+          scores[subject].push(null)
+          ranks[subject].push(null)
+        })
+        totals.push(null)
+        totalRanks.push(null)
+        inExam.push(false)
+        return
+      }
+      const student = studentMaps[examIndex][index]
+      subjects.forEach((subject) => {
+        const value = student.scores[subject] ?? null
+        scores[subject].push(value)
+        ranks[subject].push(value == null ? null : rankInfo[examIndex].subjectRanks[subject]?.[index] ?? null)
+      })
+      totals.push(student.total)
+      totalRanks.push(student.total == null ? null : rankInfo[examIndex].totalRanks[index] ?? null)
+      inExam.push(true)
+    })
+
+    const scoreDeltas: Record<string, number | null> = {}
+    const rankDeltas: Record<string, number | null> = {}
+    let upCount = 0
+    let downCount = 0
+    for (const subject of subjects) {
+      const first = scores[subject][0]
+      const last = scores[subject][lastIndex]
+      scoreDeltas[subject] = first == null || last == null ? null : round2(last - first)
+      const firstRank = ranks[subject][0]
+      const lastRank = ranks[subject][lastIndex]
+      const delta = firstRank == null || lastRank == null ? null : firstRank - lastRank
+      rankDeltas[subject] = delta
+      if (delta != null && delta > 0) upCount += 1
+      if (delta != null && delta < 0) downCount += 1
+    }
+
+    const totalDelta =
+      totals[0] == null || totals[lastIndex] == null ? null : round2((totals[lastIndex] as number) - (totals[0] as number))
+    const totalRankDelta =
+      totalRanks[0] == null || totalRanks[lastIndex] == null
+        ? null
+        : (totalRanks[0] as number) - (totalRanks[lastIndex] as number)
+
+    const presentCount = inExam.filter(Boolean).length
+    const note =
+      presentCount === exams.length
+        ? ''
+        : inExam[0] && !inExam[lastIndex]
+          ? '最后一堂未参考'
+          : !inExam[0] && inExam[lastIndex]
+            ? '第一堂未参考'
+            : `仅 ${presentCount} 场有成绩`
+
+    students.push({
+      key,
+      name: occurrence === 0 ? name : `${name}(${occurrence + 1})`,
+      scores,
+      ranks,
+      totals,
+      totalRanks,
+      inExam,
+      totalDelta,
+      totalRankDelta,
+      scoreDeltas,
+      rankDeltas,
+      upCount,
+      downCount,
+      note,
+    })
+  }
+
   students.sort((a, b) => {
-    const ta = a.targetTotalRank ?? Number.MAX_SAFE_INTEGER
-    const tb = b.targetTotalRank ?? Number.MAX_SAFE_INTEGER
+    const ta = a.totalRanks[lastIndex] ?? Number.MAX_SAFE_INTEGER
+    const tb = b.totalRanks[lastIndex] ?? Number.MAX_SAFE_INTEGER
     if (ta !== tb) return ta - tb
-    const ba = a.baseTotalRank ?? Number.MAX_SAFE_INTEGER
-    const bb = b.baseTotalRank ?? Number.MAX_SAFE_INTEGER
-    if (ba !== bb) return ba - bb
+    const fa = a.totalRanks[0] ?? Number.MAX_SAFE_INTEGER
+    const fb = b.totalRanks[0] ?? Number.MAX_SAFE_INTEGER
+    if (fa !== fb) return fa - fb
     return a.name.localeCompare(b.name, 'zh-CN')
   })
 
-  const stats = subjects.map((subject) =>
-    makeStat(
-      subject,
-      base.students,
-      target.students,
-      students.map((s) => s.rankDeltas[subject] ?? null),
-      options,
-    ),
-  )
-  const totalStat = makeStat(
-    '总分',
-    base.students,
-    target.students,
-    students.map((s) => s.totalRankDelta),
-    options,
-  )
+  const stats = subjects.map((subject) => buildSubjectStat(subject, students, options))
+  const totalStat = buildTotalStat(students, options)
+  const examStats = exams.map((exam) => buildExamStat(exam, subjects))
 
-  const baseTotalValues = base.students.map((s) => s.total)
-  const targetTotalValues = target.students.map((s) => s.total)
-  const baseBuckets = bucketize(baseTotalValues, options.bucketSize)
-  const targetBuckets = bucketize(targetTotalValues, options.bucketSize)
-  const labels = [...new Set([...baseBuckets.keys(), ...targetBuckets.keys()])].sort((a, b) => {
-    const na = Number(a.split('-')[0])
-    const nb = Number(b.split('-')[0])
-    return na - nb
+  const firstBuckets = bucketize(
+    exams[0].students.map((student) => student.total),
+    options.bucketSize,
+  )
+  const lastBuckets = bucketize(
+    exams[lastIndex].students.map((student) => student.total),
+    options.bucketSize,
+  )
+  const bucketLabels = [...new Set([...firstBuckets.keys(), ...lastBuckets.keys()])].sort((a, b) => {
+    return Number(a.split('-')[0]) - Number(b.split('-')[0])
   })
-  const buckets: BucketStat[] = labels.map((label) => ({
+  const buckets: BucketRow[] = bucketLabels.map((label) => ({
     label,
-    base: baseBuckets.get(label) ?? 0,
-    target: targetBuckets.get(label) ?? 0,
+    first: firstBuckets.get(label) ?? 0,
+    last: lastBuckets.get(label) ?? 0,
   }))
 
+  const comparableAll = students.filter((student) => student.inExam.every(Boolean)).length
+  const firstOnly = students.filter((student) => student.inExam[0] && student.inExam.filter(Boolean).length === 1).length
+  const lastOnly = students.filter(
+    (student) => student.inExam[lastIndex] && student.inExam.filter(Boolean).length === 1,
+  ).length
+
   return {
-    baseLabel: base.label,
-    targetLabel: target.label,
-    baseFileName: base.fileName,
-    targetFileName: target.fileName,
+    labels,
+    fileName: exams.map((exam) => exam.fileName).join(' / '),
     subjects,
     students,
+    examStats,
     stats,
     totalStat,
     buckets,
     counts: {
-      baseCount: base.students.length,
-      targetCount: target.students.length,
-      comparable,
-      baseOnly,
-      targetOnly,
-      totalUp,
-      totalDown,
-      totalFlat,
-      subjectUp,
-      subjectDown,
+      examCounts: exams.map((exam) => exam.students.length),
+      comparableAll,
+      firstOnly,
+      lastOnly,
+      totalUp: totalStat.up,
+      totalDown: totalStat.down,
+      totalFlat: totalStat.flat,
+      subjectUp: students.reduce((sum, student) => sum + student.upCount, 0),
+      subjectDown: students.reduce((sum, student) => sum + student.downCount, 0),
     },
-    warnings: [...new Set([...base.warnings, ...target.warnings])],
+    warnings: [...new Set(exams.flatMap((exam) => exam.warnings))],
     options,
   }
 }
+

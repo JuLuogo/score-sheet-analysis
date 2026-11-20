@@ -11,26 +11,17 @@ export interface WorkbookData {
 }
 
 export interface SubjectCol {
-  /** 显示用的科目名，可在映射时修改 */
   name: string
-  /** 在行数据中的列下标（0 起） */
   col: number
 }
 
 export interface ExamConfig {
-  /** 表头所在行（0 起） */
   headerRow: number
-  /** 姓名列 */
   nameCol: number
-  /** 科目列 */
   subjectCols: SubjectCol[]
-  /** 总分列，null 表示按科目求和 */
   totalCol: number | null
-  /** 原表排名列（可选，仅作参考） */
   rankCol: number | null
 }
-
-export type ExamRole = 'base' | 'target'
 
 export interface StudentRecord {
   id: string
@@ -41,7 +32,7 @@ export interface StudentRecord {
 }
 
 export interface ExamData {
-  role: ExamRole
+  id: string
   label: string
   fileName: string
   sheetName: string
@@ -56,80 +47,75 @@ export type RankMode = 'competition' | 'sequential'
 
 export interface AnalysisOptions {
   rankMode: RankMode
-  /** 分数段宽度，默认 50 */
   bucketSize: number
-  /** 科目满分，用于图表与导出说明；空对象表示未设置 */
   fullMarks: Record<string, number>
-  /** 及格线，用于统计及格人数；可选 */
   passMarks: Record<string, number>
 }
 
-export interface StudentAnalysis {
+export interface SeriesStudent {
   key: string
   name: string
-  inBase: boolean
-  inTarget: boolean
-  baseScores: Record<string, number | null>
-  targetScores: Record<string, number | null>
-  baseRanks: Record<string, number | null>
-  targetRanks: Record<string, number | null>
-  baseTotal: number | null
-  targetTotal: number | null
-  baseTotalRank: number | null
-  targetTotalRank: number | null
-  baseSrcRank: number | null
-  targetSrcRank: number | null
-  scoreDeltas: Record<string, number | null>
-  rankDeltas: Record<string, number | null>
+  totals: (number | null)[]
+  totalRanks: (number | null)[]
+  scores: Record<string, (number | null)[]>
+  ranks: Record<string, (number | null)[]>
+  inExam: boolean[]
   totalDelta: number | null
   totalRankDelta: number | null
+  scoreDeltas: Record<string, number | null>
+  rankDeltas: Record<string, number | null>
   upCount: number
   downCount: number
   note: string
 }
 
-export interface SubjectStat {
+export interface SeriesExamStat {
+  label: string
+  count: number
+  totalAvg: number | null
+  totalMax: number | null
+  totalMin: number | null
+  subjectAvg: Record<string, number | null>
+}
+
+export interface SeriesSubjectStat {
   subject: string
   fullMark: number | null
   passMark: number | null
-  baseCount: number
-  targetCount: number
-  baseAvg: number | null
-  targetAvg: number | null
+  firstAvg: number | null
+  lastAvg: number | null
   avgDelta: number | null
-  baseMax: number | null
-  targetMax: number | null
-  baseMin: number | null
-  targetMin: number | null
+  firstMax: number | null
+  lastMax: number | null
+  firstMin: number | null
+  lastMin: number | null
   up: number
   down: number
   flat: number
-  basePassCount: number | null
-  targetPassCount: number | null
+  firstPassCount: number | null
+  lastPassCount: number | null
 }
 
-export interface BucketStat {
+export interface BucketRow {
   label: string
-  base: number
-  target: number
+  first: number
+  last: number
 }
 
-export interface AnalysisResult {
-  baseLabel: string
-  targetLabel: string
-  baseFileName: string
-  targetFileName: string
+export interface SeriesAnalysis {
+  labels: string[]
+  fileName: string
   subjects: string[]
-  students: StudentAnalysis[]
-  stats: SubjectStat[]
-  totalStat: SubjectStat
-  buckets: BucketStat[]
+  students: SeriesStudent[]
+  examStats: SeriesExamStat[]
+  stats: SeriesSubjectStat[]
+  totalStat: SeriesSubjectStat
+  buckets: BucketRow[]
   counts: {
-    baseCount: number
-    targetCount: number
-    comparable: number
-    baseOnly: number
-    targetOnly: number
+    examCounts: number[]
+    comparableAll: number
+    firstOnly: number
+    lastOnly: number
     totalUp: number
     totalDown: number
     totalFlat: number
@@ -138,6 +124,14 @@ export interface AnalysisResult {
   }
   warnings: string[]
   options: AnalysisOptions
+}
+
+export interface ExportSelection {
+  summary: boolean
+  total: boolean
+  subjects: boolean
+  stats: boolean
+  notes: boolean
 }
 
 export interface Template {
@@ -153,7 +147,7 @@ export interface Template {
 }
 
 export interface ExamDraft {
-  role: ExamRole
+  id: string
   label: string
   workbook: WorkbookData
   sheetIndex: number
@@ -166,14 +160,9 @@ export interface HistoryItem {
   id: string
   createdAt: number
   title: string
-  baseLabel: string
-  targetLabel: string
-  baseFileName: string
-  targetFileName: string
-  counts: AnalysisResult['counts']
-  /** 解析后的考试数据（体积很小，用于一键恢复） */
-  base: ExamData
-  target: ExamData
+  labels: string[]
+  counts: SeriesAnalysis['counts']
+  exams: ExamData[]
   options: AnalysisOptions
+  selection: ExportSelection
 }
-

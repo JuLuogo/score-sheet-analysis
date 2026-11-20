@@ -1,106 +1,126 @@
 ﻿import { useMemo, useState } from 'react'
-import type { AnalysisOptions, ExamConfig, ExamDraft, ExamRole, Template } from '../types'
-import { buildExam } from '../lib/parse'
+import type { AnalysisOptions, ExamConfig, ExamDraft, Template } from '../types'
+import { detectHeaderRow, guessConfig } from '../lib/parse'
+
+type Status = { ok: true; count: number; subjects: number } | { ok: false; message: string }
 
 interface MappingStageProps {
-  base: ExamDraft
-  target: ExamDraft
+  drafts: ExamDraft[]
+  activeId: string | null
   options: AnalysisOptions
   templates: Template[]
   error: string
-  onConfig: (role: ExamRole, config: ExamConfig) => void
-  onLabel: (role: ExamRole, label: string) => void
-  onSheet: (role: ExamRole, index: number) => void
-  onHeader: (role: ExamRole, row: number) => void
-  onOptions: (options: AnalysisOptions) => void
+  status: (draft: ExamDraft) => Status
+  onSelectDraft: (id: string) => void
+  onUpdate: (id: string, patch: Partial<ExamDraft>) => void
+  onRemove: (id: string) => void
   onBack: () => void
-  onRun: () => void
+  onNext: () => void
+  onOptions: (options: AnalysisOptions) => void
   onSaveTemplate: (name: string) => void
   onApplyTemplate: (template: Template) => void
+  onDeleteTemplate: (id: string) => void
 }
 
 export function MappingStage(props: MappingStageProps) {
-  const { base, target, options } = props
+  const active = props.drafts.find((draft) => draft.id === props.activeId) ?? props.drafts[0]
   const [templateName, setTemplateName] = useState('')
 
   const subjects = useMemo(() => {
     const list: string[] = []
-    for (const draft of [base, target]) {
+    for (const draft of props.drafts) {
       for (const item of draft.config.subjectCols) {
-        const name = item.name.trim()
-        if (name && !list.includes(name)) list.push(name)
+        if (item.name && !list.includes(item.name)) list.push(item.name)
       }
     }
     return list
-  }, [base, target])
+  }, [props.drafts])
 
-  const runPreview = (draft: ExamDraft) => {
-    try {
-      const exam = buildExam({
-        role: draft.role,
-        label: draft.label,
-        fileName: draft.workbook.fileName,
-        sheetName: draft.workbook.sheets[draft.sheetIndex]?.name ?? '',
-        rows: draft.rows,
-        config: draft.config,
-      })
-      return { ok: true as const, exam }
-    } catch (err) {
-      return { ok: false as const, message: err instanceof Error ? err.message : String(err) }
-    }
-  }
-
-  const basePreview = runPreview(base)
-  const targetPreview = runPreview(target)
-  const canRun = basePreview.ok && targetPreview.ok && basePreview.exam.subjects.length > 0
+  const allOk = props.drafts.every((draft) => props.status(draft).ok)
 
   return (
     <div className="stage mapping-stage">
       <div className="stage-head">
         <div>
-          <p className="eyebrow">第 2 步 / 共 3 步</p>
-          <h1>确认两份成绩单的字段</h1>
-          <p className="stage-sub">
-            系统已自动识别，若有偏差请手动调整。姓名按“姓名列”匹配，缺考/转班学生会单独标注。
-          </p>
+          <p className="eyebrow">第 2 步 / 共 4 步</p>
+          <h1>确认每份成绩单的字段</h1>
+          <p className="stage-sub">自动识别有误时手动改；左侧切换考试，改完一起进入下一步。</p>
         </div>
         <div className="stage-actions">
           <button type="button" className="btn ghost" onClick={props.onBack}>
             返回上传
           </button>
-          <button type="button" className="btn primary" disabled={!canRun} onClick={props.onRun}>
-            开始分析
+          <button type="button" className="btn primary" disabled={!allOk} onClick={props.onNext}>
+            下一步：选择场次
           </button>
         </div>
       </div>
 
       {props.error ? <div className="alert error">{props.error}</div> : null}
 
-      <div className="mapping-grid">
-        <MappingPanel
-          draft={base}
-          preview={basePreview}
-          onConfig={props.onConfig}
-          onLabel={props.onLabel}
-          onSheet={props.onSheet}
-          onHeader={props.onHeader}
-          role="base"
-        />
-        <MappingPanel
-          draft={target}
-          preview={targetPreview}
-          onConfig={props.onConfig}
-          onLabel={props.onLabel}
-          onSheet={props.onSheet}
-          onHeader={props.onHeader}
-          role="target"
-        />
+      <div className="mapping-layout">
+        <aside className="exam-aside">
+          {props.drafts.map((draft, index) => {
+            const status = props.status(draft)
+            return (
+              <button
+                key={draft.id}
+                type="button"
+                className={`exam-aside-item ${draft.id === active?.id ? 'active' : ''}`}
+                onClick={() => props.onSelectDraft(draft.id)}
+              >
+                <span className="exam-aside-index">{index + 1}</span>
+                <span className="exam-aside-main">
+                  <strong>{draft.label}</strong>
+                  <small>
+                    {status.ok ? `${status.count} 人 · ${status.subjects} 科` : 'message' in status ? status.message : '数据有误'}
+                  </small>
+                </span>
+                <span className={`status-dot ${status.ok ? 'ok' : 'bad'}`} />
+              </button>
+            )
+          })}
+        </aside>
+
+        {active ? (
+          <section className="panel mapping-panel">
+            <div className="panel-head compact">
+              <h2>{active.label}</h2>
+              <div className="row-gap">
+                <span className="file-pill">{active.workbook.fileName}</span>
+                <button
+                  type="button"
+                  className="btn tiny ghost"
+                  onClick={() => props.onRemove(active.id)}
+                  disabled={props.drafts.length <= 2}
+                >
+                  移除
+                </button>
+              </div>
+            </div>
+
+            <ExamFields draft={active} onUpdate={props.onUpdate} />
+
+            <div className="preview-stat-line">
+              {(() => {
+                const status = props.status(active)
+                return status.ok ? (
+                  <span className="preview-stat ok">
+                    识别到 {status.count} 名学生、{status.subjects} 个科目
+                  </span>
+                ) : (
+                  <span className="preview-stat error">{"message" in status ? status.message : "数据有误"}</span>
+                )
+              })()}
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <section className="panel options-panel">
-        <div className="panel-head">
+        <div className="panel-head compact">
           <h2>分析口径</h2>
-          <p>影响名次与及格统计，可按学校习惯调整</p>
+          <span className="muted">影响名次与及格统计</span>
         </div>
         <div className="options-grid">
           <div className="field">
@@ -108,30 +128,32 @@ export function MappingStage(props: MappingStageProps) {
             <div className="segmented">
               <button
                 type="button"
-                className={options.rankMode === 'competition' ? 'active' : ''}
-                onClick={() => props.onOptions({ ...options, rankMode: 'competition' })}
+                className={props.options.rankMode === 'competition' ? 'active' : ''}
+                onClick={() => props.onOptions({ ...props.options, rankMode: 'competition' })}
               >
                 并列名次
               </button>
               <button
                 type="button"
-                className={options.rankMode === 'sequential' ? 'active' : ''}
-                onClick={() => props.onOptions({ ...options, rankMode: 'sequential' })}
+                className={props.options.rankMode === 'sequential' ? 'active' : ''}
+                onClick={() => props.onOptions({ ...props.options, rankMode: 'sequential' })}
               >
                 顺序名次
               </button>
             </div>
             <span className="field-hint">
-              {options.rankMode === 'competition'
-                ? '同分同名次，后续名次跳号（如 1、2、2、4）'
-                : '同分按出现顺序编号（1、2、3、4），与原表排名更接近'}
+              {props.options.rankMode === 'competition'
+                ? '同分同名次，后续名次跳号（1、2、2、4）'
+                : '同分按出现顺序编号，与原表排名更接近'}
             </span>
           </div>
           <div className="field">
             <label>分数段宽度</label>
             <select
-              value={options.bucketSize}
-              onChange={(event) => props.onOptions({ ...options, bucketSize: Number(event.target.value) })}
+              value={props.options.bucketSize}
+              onChange={(event) =>
+                props.onOptions({ ...props.options, bucketSize: Number(event.target.value) })
+              }
             >
               {[20, 30, 40, 50, 60, 100].map((size) => (
                 <option key={size} value={size}>
@@ -139,7 +161,7 @@ export function MappingStage(props: MappingStageProps) {
                 </option>
               ))}
             </select>
-            <span className="field-hint">用于“分数段分布”图表与统计</span>
+            <span className="field-hint">用于首末场分数段对比</span>
           </div>
         </div>
 
@@ -155,42 +177,36 @@ export function MappingStage(props: MappingStageProps) {
               <input
                 type="number"
                 min={0}
-                value={options.fullMarks[subject] ?? ''}
+                value={props.options.fullMarks[subject] ?? ''}
                 placeholder="如 120"
                 onChange={(event) => {
-                  const next = { ...options.fullMarks }
-                  const value = event.target.value
-                  if (value === '') delete next[subject]
-                  else next[subject] = Number(value)
-                  props.onOptions({ ...options, fullMarks: next })
+                  const next = { ...props.options.fullMarks }
+                  if (event.target.value === '') delete next[subject]
+                  else next[subject] = Number(event.target.value)
+                  props.onOptions({ ...props.options, fullMarks: next })
                 }}
               />
               <input
                 type="number"
                 min={0}
-                value={options.passMarks[subject] ?? ''}
+                value={props.options.passMarks[subject] ?? ''}
                 placeholder="如 72"
                 onChange={(event) => {
-                  const next = { ...options.passMarks }
-                  const value = event.target.value
-                  if (value === '') delete next[subject]
-                  else next[subject] = Number(value)
-                  props.onOptions({ ...options, passMarks: next })
+                  const next = { ...props.options.passMarks }
+                  if (event.target.value === '') delete next[subject]
+                  else next[subject] = Number(event.target.value)
+                  props.onOptions({ ...props.options, passMarks: next })
                 }}
               />
             </div>
           ))}
-          {subjects.length === 0 ? <p className="muted">请先在上方勾选科目</p> : null}
-          <p className="muted small">
-            不填也能分析；填写后会在“科目统计”里给出及格人数，并用于图表刻度提示。
-          </p>
         </div>
       </section>
 
       <section className="panel template-panel">
-        <div className="panel-head">
-          <h2>保存为模板</h2>
-          <p>下次上传同类成绩单时，自动按表头名称匹配列</p>
+        <div className="panel-head compact">
+          <h2>字段模板</h2>
+          <span className="muted">下次同类成绩单自动按表头匹配</span>
         </div>
         <div className="template-save">
           <input
@@ -207,7 +223,7 @@ export function MappingStage(props: MappingStageProps) {
               setTemplateName('')
             }}
           >
-            保存模板
+            保存当前字段
           </button>
           {props.templates.length > 0 ? (
             <select
@@ -218,7 +234,7 @@ export function MappingStage(props: MappingStageProps) {
                 event.target.value = ''
               }}
             >
-              <option value="">应用已有模板…</option>
+              <option value="">应用模板…</option>
               {props.templates.map((template) => (
                 <option key={template.id} value={template.id}>
                   {template.name}
@@ -226,44 +242,47 @@ export function MappingStage(props: MappingStageProps) {
               ))}
             </select>
           ) : null}
+          {props.templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              className="btn tiny ghost"
+              onClick={() => props.onDeleteTemplate(template.id)}
+            >
+              删除「{template.name}」
+            </button>
+          ))}
         </div>
       </section>
 
       <div className="floating-actions">
         <span>
-          {basePreview.ok
-            ? `基准：${basePreview.exam.students.length} 人 / ${basePreview.exam.subjects.length} 科`
-            : '基准数据有误'}
-          {'  ·  '}
-          {targetPreview.ok
-            ? `对比：${targetPreview.exam.students.length} 人 / ${targetPreview.exam.subjects.length} 科`
-            : '对比数据有误'}
+          共 {props.drafts.length} 份 ·{' '}
+          {allOk ? '字段检查通过' : '还有未通过的字段，请检查左侧红色标记'}
         </span>
-        <button type="button" className="btn primary" disabled={!canRun} onClick={props.onRun}>
-          开始分析
+        <button type="button" className="btn primary" disabled={!allOk} onClick={props.onNext}>
+          下一步：选择场次
         </button>
       </div>
     </div>
   )
 }
 
-interface MappingPanelProps {
+function ExamFields({
+  draft,
+  onUpdate,
+}: {
   draft: ExamDraft
-  role: ExamRole
-  preview: { ok: true; exam: ReturnType<typeof buildExam> } | { ok: false; message: string }
-  onConfig: (role: ExamRole, config: ExamConfig) => void
-  onLabel: (role: ExamRole, label: string) => void
-  onSheet: (role: ExamRole, index: number) => void
-  onHeader: (role: ExamRole, row: number) => void
-}
-
-function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHeader }: MappingPanelProps) {
-  const sheet = draft.workbook.sheets[draft.sheetIndex]
+  onUpdate: (id: string, patch: Partial<ExamDraft>) => void
+}) {
   const header = draft.rows[draft.headerRow] ?? []
   const width = Math.max(...draft.rows.slice(0, 12).map((row) => row.length), header.length, 1)
   const headerOptions = Array.from({ length: width }, (_, index) => ({
     index,
-    text: header[index] == null || String(header[index]).trim() === '' ? `第 ${index + 1} 列` : String(header[index]),
+    text:
+      header[index] == null || String(header[index]).trim() === ''
+        ? `第 ${index + 1} 列`
+        : String(header[index]),
   }))
   const numericCols = new Set<number>()
   for (let col = 0; col < width; col += 1) {
@@ -282,54 +301,60 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
       item.index !== draft.config.totalCol &&
       item.index !== draft.config.rankCol,
   )
-  const selectedCols = new Set(draft.config.subjectCols.map((item) => item.col))
+  const selected = new Set(draft.config.subjectCols.map((item) => item.col))
+
+  const patchConfig = (config: ExamConfig) => onUpdate(draft.id, { config })
 
   const toggleSubject = (col: number) => {
     const exists = draft.config.subjectCols.find((item) => item.col === col)
     const subjectCols = exists
       ? draft.config.subjectCols.filter((item) => item.col !== col)
-      : [...draft.config.subjectCols, { name: headerOptions[col].text, col }].sort((a, b) => a.col - b.col)
-    onConfig(role, { ...draft.config, subjectCols })
+      : [...draft.config.subjectCols, { name: headerOptions[col].text, col }].sort(
+          (a, b) => a.col - b.col,
+        )
+    patchConfig({ ...draft.config, subjectCols })
+  }
+
+  const changeSheet = (index: number) => {
+    const rows = draft.workbook.sheets[index]?.rows ?? []
+    const headerRow = detectHeaderRow(rows)
+    onUpdate(draft.id, { sheetIndex: index, rows, headerRow, config: guessConfig(rows, headerRow) })
+  }
+
+  const changeHeader = (row: number) => {
+    onUpdate(draft.id, { headerRow: row, config: guessConfig(draft.rows, row) })
   }
 
   const previewRows = draft.rows.slice(draft.headerRow, draft.headerRow + 4)
-  const previewCols = Math.min(width, 9)
+  const previewCols = Math.min(width, 10)
 
   return (
-    <section className={`panel mapping-panel ${role}`}>
-      <div className="panel-head compact">
-        <h2>{role === 'base' ? '基准考试' : '对比考试'}</h2>
-        <span className="file-pill">{draft.workbook.fileName}</span>
-      </div>
-
+    <>
       <div className="mapping-fields">
         <div className="field">
           <label>考试名称</label>
-          <input value={draft.label} onChange={(event) => onLabel(role, event.target.value)} />
+          <input value={draft.label} onChange={(event) => onUpdate(draft.id, { label: event.target.value })} />
         </div>
         <div className="field">
           <label>工作表</label>
-          <select
-            value={draft.sheetIndex}
-            onChange={(event) => onSheet(role, Number(event.target.value))}
-          >
-            {draft.workbook.sheets.map((item, index) => (
-              <option key={`${item.name}-${index}`} value={index}>
-                {item.name}（{item.rows.length} 行）
+          <select value={draft.sheetIndex} onChange={(event) => changeSheet(Number(event.target.value))}>
+            {draft.workbook.sheets.map((sheet, index) => (
+              <option key={`${sheet.name}-${index}`} value={index}>
+                {sheet.name}（{sheet.rows.length} 行）
               </option>
             ))}
           </select>
         </div>
         <div className="field">
           <label>表头所在行</label>
-          <select value={draft.headerRow} onChange={(event) => onHeader(role, Number(event.target.value))}>
+          <select value={draft.headerRow} onChange={(event) => changeHeader(Number(event.target.value))}>
             {draft.rows.slice(0, 12).map((row, index) => {
               const label = row
                 .slice(0, 6)
                 .map((cell) => (cell == null ? '' : String(cell).trim()))
                 .filter(Boolean)
                 .join('、')
-                .slice(0, 26)
+                .slice(0, 24)
               return (
                 <option key={index} value={index}>
                   第 {index + 1} 行：{label || '空行'}
@@ -342,7 +367,7 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
           <label>姓名列</label>
           <select
             value={draft.config.nameCol}
-            onChange={(event) => onConfig(role, { ...draft.config, nameCol: Number(event.target.value) })}
+            onChange={(event) => patchConfig({ ...draft.config, nameCol: Number(event.target.value) })}
           >
             {headerOptions.map((item) => (
               <option key={item.index} value={item.index}>
@@ -356,7 +381,7 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
           <select
             value={draft.config.totalCol ?? ''}
             onChange={(event) =>
-              onConfig(role, {
+              patchConfig({
                 ...draft.config,
                 totalCol: event.target.value === '' ? null : Number(event.target.value),
               })
@@ -375,7 +400,7 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
           <select
             value={draft.config.rankCol ?? ''}
             onChange={(event) =>
-              onConfig(role, {
+              patchConfig({
                 ...draft.config,
                 rankCol: event.target.value === '' ? null : Number(event.target.value),
               })
@@ -395,7 +420,7 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
         <label>科目列（勾选参与统计的列）</label>
         <div className="chip-list">
           {subjectOptions.map((item) => {
-            const active = selectedCols.has(item.index)
+            const active = selected.has(item.index)
             return (
               <button
                 type="button"
@@ -422,7 +447,7 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
                     className={
                       colIndex === draft.config.nameCol
                         ? 'col-name'
-                        : selectedCols.has(colIndex)
+                        : selected.has(colIndex)
                           ? 'col-subject'
                           : ''
                     }
@@ -434,19 +459,8 @@ function MappingPanel({ draft, role, preview, onConfig, onLabel, onSheet, onHead
             ))}
           </tbody>
         </table>
-        <p className="mini-preview-note">工作表：{sheet?.name ?? '—'}</p>
       </div>
-
-      {preview.ok ? (
-        <div className="preview-stat ok">
-          识别到 <strong>{preview.exam.students.length}</strong> 名学生、
-          <strong>{preview.exam.subjects.length}</strong> 个科目
-          {preview.exam.warnings.length ? `，${preview.exam.warnings.length} 条提醒` : ''}
-        </div>
-      ) : (
-        <div className="preview-stat error">{"message" in preview ? preview.message : "数据有误"}</div>
-      )}
-    </section>
+    </>
   )
 }
 

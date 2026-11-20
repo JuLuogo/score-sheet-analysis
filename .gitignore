@@ -33,3 +33,7 @@ deliverables/*.xlsx
 deliverables/*.xls
 deliverables/*.pptx
 deliverables/*.csv
+
+preview.log
+preview.err
+

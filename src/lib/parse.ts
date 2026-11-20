@@ -1,12 +1,4 @@
-import type {
-  Cell,
-  ExamConfig,
-  ExamData,
-  ExamRole,
-  SheetData,
-  StudentRecord,
-  WorkbookData,
-} from '../types'
+﻿import type { Cell, ExamConfig, ExamData, SheetData, StudentRecord, WorkbookData } from '../types'
 import { round2 } from './format'
 
 const SUMMARY_NAMES = /^(最高分|最低分|平均分|及格率|优秀率|合计|小计|班级|人数|参考人数)$/
@@ -237,7 +229,7 @@ export function guessConfig(rows: Cell[][], headerRow: number): ExamConfig {
 }
 
 export interface BuildExamParams {
-  role: ExamRole
+  id: string
   label: string
   fileName: string
   sheetName: string
@@ -247,7 +239,7 @@ export interface BuildExamParams {
 
 /** 依据映射把二维表转成学生记录 */
 export function buildExam(params: BuildExamParams): ExamData {
-  const { role, label, fileName, sheetName, rows, config } = params
+  const { id, label, fileName, sheetName, rows, config } = params
   const warnings: string[] = []
 
   const subjects: string[] = []
@@ -318,7 +310,7 @@ export function buildExam(params: BuildExamParams): ExamData {
   if (config.totalCol == null) warnings.push(`${label}：未指定总分列，总分按科目求和`)
 
   return {
-    role,
+    id,
     label,
     fileName,
     sheetName,
@@ -329,3 +321,4 @@ export function buildExam(params: BuildExamParams): ExamData {
     warnings,
   }
 }
+

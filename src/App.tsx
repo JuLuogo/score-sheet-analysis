@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import type {
   AnalysisOptions,
   ExamConfig,
   ExamData,
   ExamDraft,
-  ExamRole,
+  ExportSelection,
   HistoryItem,
   Template,
 } from './types'
-import { analyze } from './lib/analyze'
+import { analyzeSeries } from './lib/analyze'
 import { buildExam, detectHeaderRow, guessConfig, parseFile } from './lib/parse'
 import { makeDemo } from './lib/demo'
 import { exportCsv, exportXlsx } from './lib/export'
@@ -24,16 +24,25 @@ import {
 } from './lib/storage'
 import { UploadStage } from './components/UploadStage'
 import { MappingStage } from './components/MappingStage'
+import { SelectStage } from './components/SelectStage'
 import { ResultStage } from './components/ResultStage'
 import './styles.css'
 
-type Stage = 'upload' | 'mapping' | 'result'
+type Stage = 'upload' | 'mapping' | 'select' | 'result'
 
 const DEFAULT_OPTIONS: AnalysisOptions = {
   rankMode: 'competition',
   bucketSize: 50,
   fullMarks: {},
   passMarks: {},
+}
+
+const DEFAULT_SELECTION: ExportSelection = {
+  summary: true,
+  total: true,
+  subjects: true,
+  stats: true,
+  notes: true,
 }
 
 const MARK_DEFAULTS: Record<string, [number, number]> = {
@@ -45,17 +54,20 @@ const MARK_DEFAULTS: Record<string, [number, number]> = {
   总分: [660, 0],
 }
 
+const uid = () => `exam-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`
+
 function App() {
   const [stage, setStage] = useState<Stage>('upload')
-  const [baseDraft, setBaseDraft] = useState<ExamDraft | null>(null)
-  const [targetDraft, setTargetDraft] = useState<ExamDraft | null>(null)
-  const [baseExam, setBaseExam] = useState<ExamData | null>(null)
-  const [targetExam, setTargetExam] = useState<ExamData | null>(null)
+  const [drafts, setDrafts] = useState<ExamDraft[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [exams, setExams] = useState<ExamData[]>([])
   const [options, setOptions] = useState<AnalysisOptions>(() => loadOptions() ?? DEFAULT_OPTIONS)
+  const [selection, setSelection] = useState<ExportSelection>(DEFAULT_SELECTION)
   const [className, setClassName] = useState('24汽修高考班')
   const [templates, setTemplates] = useState<Template[]>(() => loadTemplates())
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory())
-  const [busyRole, setBusyRole] = useState<ExamRole | null>(null)
+  const [busy, setBusy] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -65,103 +77,130 @@ function App() {
   }, [options])
 
   const result = useMemo(() => {
-    if (!baseExam || !targetExam) return null
+    if (exams.length < 2) return null
     try {
-      return analyze(baseExam, targetExam, options)
+      return analyzeSeries(exams, options)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       return null
     }
-  }, [baseExam, targetExam, options])
+  }, [exams, options])
 
-  const setDraft = (role: ExamRole, draft: ExamDraft | null) => {
-    if (role === 'base') setBaseDraft(draft)
-    else setTargetDraft(draft)
+  const updateDraft = (id: string, patch: Partial<ExamDraft>) => {
+    setDrafts((list) => list.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)))
   }
 
-  const handleFile = async (role: ExamRole, file: File) => {
-    setBusyRole(role)
+  const addFiles = async (files: File[]) => {
+    if (!files.length) return
     setError('')
-    try {
-      const workbook = await parseFile(file)
-      const sheetIndex = 0
-      const rows = workbook.sheets[sheetIndex].rows
-      const headerRow = detectHeaderRow(rows)
-      const config = guessConfig(rows, headerRow)
-      setDraft(role, {
-        role,
-        label: role === 'base' ? '基准考试' : '对比考试',
-        workbook,
-        sheetIndex,
-        rows,
-        headerRow,
-        config,
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusyRole(null)
+    setBusy((value) => value + files.length)
+    const created: ExamDraft[] = []
+    const errors: string[] = []
+    for (const file of files) {
+      try {
+        const workbook = await parseFile(file)
+        const sheetIndex = 0
+        const rows = workbook.sheets[sheetIndex].rows
+        const headerRow = detectHeaderRow(rows)
+        const base = file.name.replace(/\.(xlsx|xlsm|csv)$/i, '')
+        created.push({
+          id: uid(),
+          label: base || `考试${drafts.length + created.length + 1}`,
+          workbook,
+          sheetIndex,
+          rows,
+          headerRow,
+          config: guessConfig(rows, headerRow),
+        })
+      } catch (err) {
+        errors.push(`${file.name}：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setBusy((value) => Math.max(0, value - 1))
+      }
     }
-  }
-
-  const changeSheet = (role: ExamRole, sheetIndex: number) => {
-    const draft = role === 'base' ? baseDraft : targetDraft
-    if (!draft) return
-    const rows = draft.workbook.sheets[sheetIndex]?.rows ?? []
-    const headerRow = detectHeaderRow(rows)
-    setDraft(role, { ...draft, sheetIndex, rows, headerRow, config: guessConfig(rows, headerRow) })
-  }
-
-  const changeHeader = (role: ExamRole, headerRow: number) => {
-    const draft = role === 'base' ? baseDraft : targetDraft
-    if (!draft) return
-    setDraft(role, { ...draft, headerRow, config: guessConfig(draft.rows, headerRow) })
-  }
-
-  const changeConfig = (role: ExamRole, config: ExamConfig) => {
-    const draft = role === 'base' ? baseDraft : targetDraft
-    if (!draft) return
-    setDraft(role, { ...draft, config })
-  }
-
-  const changeLabel = (role: ExamRole, label: string) => {
-    const draft = role === 'base' ? baseDraft : targetDraft
-    if (!draft) return
-    setDraft(role, { ...draft, label })
-  }
-
-  const withMarks = (next: AnalysisOptions, subjects: string[]): AnalysisOptions => {
-    const fullMarks = { ...next.fullMarks }
-    const passMarks = { ...next.passMarks }
-    for (const subject of subjects) {
-      const preset = MARK_DEFAULTS[subject]
-      if (!preset) continue
-      if (fullMarks[subject] == null) fullMarks[subject] = preset[0]
-      if (passMarks[subject] == null && preset[1]) passMarks[subject] = preset[1]
+    if (created.length) {
+      setDrafts((list) => [...list, ...created])
+      setActiveId((current) => current ?? created[0].id)
+      setSelectedIds((list) => [...list, ...created.map((draft) => draft.id)])
     }
-    return { ...next, fullMarks, passMarks }
+    if (errors.length) setError(errors.join('；'))
+  }
+
+  const removeDraft = (id: string) => {
+    setDrafts((list) => list.filter((draft) => draft.id !== id))
+    setSelectedIds((list) => list.filter((item) => item !== id))
+    setActiveId((current) => (current === id ? null : current))
   }
 
   const buildFromDraft = (draft: ExamDraft): ExamData =>
     buildExam({
-      role: draft.role,
-      label: draft.label.trim() || (draft.role === 'base' ? '基准考试' : '对比考试'),
+      id: draft.id,
+      label: draft.label.trim() || '未命名考试',
       fileName: draft.workbook.fileName,
       sheetName: draft.workbook.sheets[draft.sheetIndex]?.name ?? '',
       rows: draft.rows,
       config: draft.config,
     })
 
+  const draftStatus = (draft: ExamDraft) => {
+    try {
+      const exam = buildFromDraft(draft)
+      return { ok: true as const, count: exam.students.length, subjects: exam.subjects.length }
+    } catch (err) {
+      return { ok: false as const, message: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
+  const goMapping = () => {
+    if (drafts.length < 2) {
+      setError('至少上传 2 份成绩单才能对比')
+      return
+    }
+    setError('')
+    setActiveId((current) => current ?? drafts[0]?.id ?? null)
+    setStage('mapping')
+  }
+
+  const goSelect = () => {
+    setError('')
+    for (const draft of drafts) {
+      const status = draftStatus(draft)
+      if (!status.ok) {
+        setActiveId(draft.id)
+        setError(`「${draft.label}」还有问题：${status.message}`)
+        return
+      }
+    }
+    setSelectedIds((list) => {
+      const valid = list.filter((id) => drafts.some((draft) => draft.id === id))
+      const missing = drafts.filter((draft) => !valid.includes(draft.id)).map((draft) => draft.id)
+      return [...valid, ...missing]
+    })
+    setStage('select')
+  }
+
   const runAnalysis = () => {
-    if (!baseDraft || !targetDraft) return
+    if (selectedIds.length < 2) {
+      setError('至少选择 2 场考试')
+      return
+    }
     setError('')
     try {
-      const base = buildFromDraft(baseDraft)
-      const target = buildFromDraft(targetDraft)
-      const subjects = [...new Set([...base.subjects, ...target.subjects])]
-      setOptions((current) => withMarks(current, subjects))
-      setBaseExam(base)
-      setTargetExam(target)
+      const picked = selectedIds
+        .map((id) => drafts.find((draft) => draft.id === id))
+        .filter((draft): draft is ExamDraft => Boolean(draft))
+        .map(buildFromDraft)
+      const subjects = [...new Set(picked.flatMap((exam) => exam.subjects))]
+      const fullMarks = { ...options.fullMarks }
+      const passMarks = { ...options.passMarks }
+      for (const subject of subjects) {
+        const preset = MARK_DEFAULTS[subject]
+        if (!preset) continue
+        if (fullMarks[subject] == null) fullMarks[subject] = preset[0]
+        if (passMarks[subject] == null && preset[1]) passMarks[subject] = preset[1]
+      }
+      setOptions({ ...options, fullMarks, passMarks })
+      setExams(picked)
       setSaved(false)
       setStage('result')
     } catch (err) {
@@ -169,21 +208,42 @@ function App() {
     }
   }
 
+  const handleDemo = (to: 'mapping' | 'select' | 'result' = 'result') => {
+    const demo = makeDemo()
+    const nextDrafts: ExamDraft[] = demo.exams.map((exam) => ({
+      id: exam.id,
+      label: exam.label,
+      workbook: { fileName: exam.fileName, sheets: [{ name: exam.sheetName, rows: exam.rows }] },
+      sheetIndex: 0,
+      rows: exam.rows,
+      headerRow: exam.config.headerRow,
+      config: exam.config,
+    }))
+    setDrafts(nextDrafts)
+    setSelectedIds(nextDrafts.map((draft) => draft.id))
+    setActiveId(nextDrafts[0].id)
+    setOptions(demo.options)
+    setSaved(false)
+    if (to === 'result') {
+      setExams(demo.exams)
+      setStage('result')
+    } else {
+      setStage(to)
+    }
+  }
+
   const applyTemplate = (template: Template) => {
-    if (!baseDraft && !targetDraft) {
-      setError('请先上传至少一份成绩单，再应用模板')
+    if (!drafts.length) {
+      setError('请先上传成绩单，再应用模板')
       return
     }
     const mapDraft = (draft: ExamDraft): ExamDraft => {
       const header = draft.rows[draft.headerRow] ?? []
-      const findCol = (name: string | null) => {
-        if (!name) return null
-        const index = header.findIndex((cell) => String(cell ?? '').trim() === name)
-        return index >= 0 ? index : null
-      }
-      const nameCol = findCol(template.nameHeader) ?? draft.config.nameCol
-      const totalCol = findCol(template.totalHeader) ?? draft.config.totalCol
-      const rankCol = findCol(template.rankHeader) ?? draft.config.rankCol
+      const find = (name: string | null) =>
+        name == null ? -1 : header.findIndex((cell) => String(cell ?? '').trim() === name)
+      const nameCol = find(template.nameHeader)
+      const totalCol = find(template.totalHeader)
+      const rankCol = find(template.rankHeader)
       const subjectCols = template.subjectHeaders
         .map((name) => {
           const col = header.findIndex((cell) => String(cell ?? '').trim() === name)
@@ -192,107 +252,67 @@ function App() {
         .filter((item): item is { name: string; col: number } => item != null)
       const config: ExamConfig = {
         ...draft.config,
-        nameCol,
-        totalCol,
-        rankCol,
+        nameCol: nameCol >= 0 ? nameCol : draft.config.nameCol,
+        totalCol: totalCol >= 0 ? totalCol : draft.config.totalCol,
+        rankCol: rankCol >= 0 ? rankCol : draft.config.rankCol,
         subjectCols: subjectCols.length ? subjectCols : draft.config.subjectCols,
       }
       return { ...draft, config }
     }
-    if (baseDraft) setBaseDraft(mapDraft(baseDraft))
-    if (targetDraft) setTargetDraft(mapDraft(targetDraft))
-    setOptions({ ...options, ...template.options })
+    setDrafts((list) => list.map(mapDraft))
+    setOptions((current) => ({ ...current, ...template.options }))
   }
 
   const saveTemplate = (name: string) => {
-    if (!baseDraft) return
-    const header = baseDraft.rows[baseDraft.headerRow] ?? []
-    const headerOf = (col: number | null) => (col == null ? null : String(header[col] ?? '').trim() || null)
+    const base = drafts.find((draft) => draft.id === activeId) ?? drafts[0]
+    if (!base) return
+    const header = base.rows[base.headerRow] ?? []
+    const headerOf = (col: number | null) =>
+      col == null ? null : String(header[col] ?? '').trim() || null
     const template: Template = {
       id: `tpl-${Date.now()}`,
       name,
       createdAt: Date.now(),
-      subjects: baseDraft.config.subjectCols.map((item) => item.name),
-      subjectHeaders: baseDraft.config.subjectCols.map((item) => String(header[item.col] ?? item.name)),
-      nameHeader: headerOf(baseDraft.config.nameCol),
-      totalHeader: headerOf(baseDraft.config.totalCol),
-      rankHeader: headerOf(baseDraft.config.rankCol),
+      subjects: base.config.subjectCols.map((item) => item.name),
+      subjectHeaders: base.config.subjectCols.map((item) => String(header[item.col] ?? item.name)),
+      nameHeader: headerOf(base.config.nameCol),
+      totalHeader: headerOf(base.config.totalCol),
+      rankHeader: headerOf(base.config.rankCol),
       options,
     }
     setTemplates(upsertTemplate(template))
   }
 
-  const handleDemo = (toResult = true) => {
-    const demo = makeDemo()
-    const base: ExamDraft = {
-      role: 'base',
-      label: demo.base.label,
-      workbook: { fileName: demo.base.fileName, sheets: [{ name: 'Sheet1', rows: demo.base.rows }] },
-      sheetIndex: 0,
-      rows: demo.base.rows,
-      headerRow: demo.base.config.headerRow,
-      config: demo.base.config,
-    }
-    const target: ExamDraft = {
-      role: 'target',
-      label: demo.target.label,
-      workbook: { fileName: demo.target.fileName, sheets: [{ name: 'Sheet1', rows: demo.target.rows }] },
-      sheetIndex: 0,
-      rows: demo.target.rows,
-      headerRow: demo.target.config.headerRow,
-      config: demo.target.config,
-    }
-    setBaseDraft(base)
-    setTargetDraft(target)
-    setBaseExam(demo.base)
-    setTargetExam(demo.target)
-    setOptions(demo.options)
-    setSaved(false)
-    setStage(toResult ? 'result' : 'mapping')
-  }
-
-  const restoreHistory = (item: HistoryItem) => {
-    setBaseExam(item.base)
-    setTargetExam(item.target)
-    setOptions(item.options)
-    setClassName(item.title || '成绩对比')
-    setSaved(true)
-    setStage('result')
-  }
-
-  useEffect(() => {
-    const demoParam = new URLSearchParams(window.location.search).get('demo')
-    if (demoParam === '1' || demoParam === 'mapping') {
-      handleDemo(demoParam === '1')
-    }
-    // 只在首次加载时根据 URL 决定是否进入演示
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const saveHistory = () => {
-    if (!result || !baseExam || !targetExam) return
+    if (!result) return
     const item: HistoryItem = {
       id: `hist-${Date.now()}`,
       createdAt: Date.now(),
       title: className.trim() || '成绩对比',
-      baseLabel: baseExam.label,
-      targetLabel: targetExam.label,
-      baseFileName: baseExam.fileName,
-      targetFileName: targetExam.fileName,
+      labels: result.labels,
       counts: result.counts,
-      base: baseExam,
-      target: targetExam,
+      exams,
       options,
+      selection,
     }
     setHistory(addHistory(item))
     setSaved(true)
+  }
+
+  const restoreHistory = (item: HistoryItem) => {
+    setExams(item.exams)
+    setOptions(item.options)
+    setSelection(item.selection)
+    setClassName(item.title)
+    setSaved(true)
+    setStage('result')
   }
 
   const doExportXlsx = async () => {
     if (!result) return
     setExporting(true)
     try {
-      await exportXlsx(result, className.trim() || '成绩对比')
+      await exportXlsx(result, className.trim() || '成绩对比', selection)
     } catch (err) {
       setError(`导出失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
@@ -300,12 +320,21 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    const demo = new URLSearchParams(window.location.search).get('demo')
+    if (demo === '1') handleDemo('result')
+    else if (demo === 'mapping') handleDemo('mapping')
+    else if (demo === 'select') handleDemo('select')
+    // 仅在首次加载时读取 URL 参数
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const reset = () => {
     setStage('upload')
-    setBaseDraft(null)
-    setTargetDraft(null)
-    setBaseExam(null)
-    setTargetExam(null)
+    setDrafts([])
+    setSelectedIds([])
+    setActiveId(null)
+    setExams([])
     setError('')
     setSaved(false)
   }
@@ -317,59 +346,78 @@ function App() {
           <span className="brand-mark">成</span>
           <div>
             <strong>成绩对比分析</strong>
-            <span>Grade Compare · 可复用 / 可导出 / 纯前端</span>
+            <span>多场考试 · 横向对比 · 本地处理</span>
           </div>
         </div>
         <div className="topbar-right">
-          <span className="privacy-badge" title="数据不会离开你的电脑">
-            本地处理 · 不上传
-          </span>
-          <a
-            className="top-link"
-            href="https://edgeone.ai/pages"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
+          <span className="privacy-badge">本地处理 · 不上传</span>
+          <a className="top-link" href="https://edgeone.ai/pages" target="_blank" rel="noreferrer noopener">
             EdgeOne Pages
           </a>
         </div>
       </header>
 
-      <main className="container">
+      <main className={stage === 'result' ? 'container wide' : 'container slim'}>
         {stage === 'upload' ? (
           <UploadStage
-            base={baseDraft}
-            target={targetDraft}
-            templates={templates}
+            drafts={drafts}
+            busy={busy > 0}
             history={history}
-            busyRole={busyRole}
             error={error}
-            onFile={handleFile}
-            onDemo={handleDemo}
-            onNext={() => setStage('mapping')}
-            onRestoreHistory={restoreHistory}
+            onFiles={addFiles}
+            onDemo={() => handleDemo('result')}
+            onRemove={removeDraft}
             onRemoveHistory={(id) => setHistory(removeHistory(id))}
-            onApplyTemplate={applyTemplate}
-            onDeleteTemplate={(id) => setTemplates(removeTemplate(id))}
+            onRestoreHistory={restoreHistory}
+            onNext={goMapping}
           />
         ) : null}
 
-        {stage === 'mapping' && baseDraft && targetDraft ? (
+        {stage === 'mapping' && drafts.length ? (
           <MappingStage
-            base={baseDraft}
-            target={targetDraft}
+            drafts={drafts}
+            activeId={activeId}
             options={options}
             templates={templates}
             error={error}
-            onConfig={changeConfig}
-            onLabel={changeLabel}
-            onSheet={changeSheet}
-            onHeader={changeHeader}
-            onOptions={setOptions}
+            status={draftStatus}
+            onSelectDraft={setActiveId}
+            onUpdate={updateDraft}
+            onRemove={removeDraft}
             onBack={() => setStage('upload')}
-            onRun={runAnalysis}
+            onNext={goSelect}
             onSaveTemplate={saveTemplate}
             onApplyTemplate={applyTemplate}
+            onDeleteTemplate={(id) => setTemplates(removeTemplate(id))}
+            onOptions={setOptions}
+          />
+        ) : null}
+
+        {stage === 'select' ? (
+          <SelectStage
+            drafts={drafts}
+            selectedIds={selectedIds}
+            selection={selection}
+            error={error}
+            onToggle={(id) =>
+              setSelectedIds((list) =>
+                list.includes(id) ? list.filter((item) => item !== id) : [...list, id],
+              )
+            }
+            onMove={(id, delta) =>
+              setSelectedIds((list) => {
+                const index = list.indexOf(id)
+                const target = index + delta
+                if (index < 0 || target < 0 || target >= list.length) return list
+                const next = [...list]
+                next.splice(index, 1)
+                next.splice(target, 0, id)
+                return next
+              })
+            }
+            onSelection={setSelection}
+            onBack={() => setStage('mapping')}
+            onRun={runAnalysis}
           />
         ) : null}
 
@@ -377,31 +425,24 @@ function App() {
           <ResultStage
             result={result}
             className={className}
-            onClassName={setClassName}
+            selection={selection}
             exporting={exporting}
             saved={saved}
+            onClassName={setClassName}
+            onSelection={setSelection}
             onExportXlsx={doExportXlsx}
             onExportCsv={() => exportCsv(result, className.trim() || '成绩对比')}
             onSaveHistory={saveHistory}
-            onBackMapping={() => setStage('mapping')}
+            onBackSelect={() => setStage('select')}
             onReset={reset}
           />
         ) : null}
 
-        {stage === 'mapping' && (!baseDraft || !targetDraft) ? (
-          <div className="panel empty-panel">
-            <p>请先返回上传两份成绩单。</p>
-            <button type="button" className="btn" onClick={() => setStage('upload')}>
-              返回上传
-            </button>
-          </div>
-        ) : null}
-
         {stage === 'result' && !result ? (
           <div className="panel empty-panel">
-            <p>{error || '分析结果为空，请返回检查字段。'}</p>
-            <button type="button" className="btn" onClick={() => setStage('mapping')}>
-              返回字段确认
+            <p>{error || '暂无可分析的数据，请返回重新选择。'}</p>
+            <button type="button" className="btn" onClick={() => setStage('select')}>
+              返回选择
             </button>
           </div>
         ) : null}
@@ -416,4 +457,5 @@ function App() {
 }
 
 export default App
+
 

@@ -1,9 +1,8 @@
-﻿import type { AnalysisResult, StudentAnalysis, SubjectStat } from '../types'
+import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import { deltaWord, fmtDelta, fmtRankDelta, fmtScore } from './format'
 
 const NAVY = 'FF1F3864'
 const HEAD = 'FF2F5597'
-const HEAD_FONT = 'FFFFFFFF'
 const GREEN_FILL = 'FFC6EFCE'
 const GREEN_FONT = 'FF006100'
 const RED_FILL = 'FFFFC7CE'
@@ -30,11 +29,11 @@ function safeName(text: string) {
 
 function stamp() {
   const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
+  const pad = (value: number) => String(value).padStart(2, '0')
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
 }
 
-function applyDeltaStyle(cell: any, value: number | null, isRank: boolean) {
+function applyDelta(cell: any, value: number | null, isRank: boolean) {
   if (value == null) {
     cell.font = { color: { argb: NA_FONT }, italic: true }
     return
@@ -50,10 +49,9 @@ function applyDeltaStyle(cell: any, value: number | null, isRank: boolean) {
     cell.font = { color: { argb: FLAT_FONT } }
   }
   cell.numFmt = isRank ? '+0;-0;0' : '+0.0;-0.0;0.0'
-  cell.alignment = { horizontal: 'center', vertical: 'middle' }
 }
 
-function thinBorder(cell: any) {
+function border(cell: any) {
   cell.border = {
     top: { style: 'thin', color: { argb: BORDER } },
     left: { style: 'thin', color: { argb: BORDER } },
@@ -62,321 +60,339 @@ function thinBorder(cell: any) {
   }
 }
 
-function writeTitle(ws: any, colCount: number, title: string, subtitle: string) {
-  ws.mergeCells(1, 1, 1, colCount)
-  ws.mergeCells(2, 1, 2, colCount)
-  const titleCell = ws.getCell(1, 1)
-  titleCell.value = title
-  titleCell.font = { size: 16, bold: true, color: { argb: NAVY } }
-  titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
-  const subCell = ws.getCell(2, 1)
-  subCell.value = subtitle
-  subCell.font = { size: 9, italic: true, color: { argb: FLAT_FONT } }
-  subCell.alignment = { horizontal: 'center', vertical: 'middle' }
+function title(ws: any, cols: number, text: string, subtitle: string) {
+  ws.mergeCells(1, 1, 1, cols)
+  ws.mergeCells(2, 1, 2, cols)
+  const main = ws.getCell(1, 1)
+  main.value = text
+  main.font = { size: 16, bold: true, color: { argb: NAVY } }
+  main.alignment = { horizontal: 'center', vertical: 'middle' }
+  const sub = ws.getCell(2, 1)
+  sub.value = subtitle
+  sub.font = { size: 9, italic: true, color: { argb: FLAT_FONT } }
+  sub.alignment = { horizontal: 'center', vertical: 'middle' }
   ws.getRow(1).height = 30
   ws.getRow(2).height = 22
 }
 
-function writeHeader(ws: any, row: number, headers: string[]) {
+function headerRow(ws: any, row: number, headers: string[]) {
   headers.forEach((text, index) => {
     const cell = ws.getCell(row, index + 1)
     cell.value = text
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEAD } }
-    cell.font = { bold: true, color: { argb: HEAD_FONT }, size: 10.5 }
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10.5 }
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-    thinBorder(cell)
+    border(cell)
   })
-  ws.getRow(row).height = 38
+  ws.getRow(row).height = 40
 }
 
-function finishSheet(ws: any, lastRow: number, colCount: number, freeze = 'C4') {
+function finish(ws: any, lastRow: number, cols: number) {
   ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 3 }]
-  if (lastRow >= 4) {
-    ws.autoFilter = { from: { row: 3, column: 2 }, to: { row: lastRow, column: colCount } }
-  }
+  if (lastRow >= 4) ws.autoFilter = { from: { row: 3, column: 2 }, to: { row: lastRow, column: cols } }
   ws.pageSetup = { orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 }
-  void freeze
 }
 
-function mergeWarnings(result: AnalysisResult) {
-  const parts = [`基准：${result.baseLabel}（${result.baseFileName}）`, `对比：${result.targetLabel}（${result.targetFileName}）`]
-  parts.push(`排名口径：${result.options.rankMode === 'competition' ? '并列名次（同分同名次，后续跳号）' : '顺序名次（同分按顺序编号）'}`)
-  if (result.counts.baseOnly) parts.push(`${result.counts.baseOnly} 人仅基准考试有成绩`)
-  if (result.counts.targetOnly) parts.push(`${result.counts.targetOnly} 人仅对比考试有成绩`)
+function subtitleOf(result: SeriesAnalysis) {
+  const parts = [
+    `共 ${result.labels.length} 场：${result.labels.join(' → ')}`,
+    `基准：${result.labels[0]}`,
+    `排名口径：${result.options.rankMode === 'competition' ? '并列名次（同分同名次，后续跳号）' : '顺序名次（同分按顺序编号）'}`,
+  ]
+  if (result.counts.comparableAll) parts.push(`全程参考 ${result.counts.comparableAll} 人`)
   return parts.join('；')
 }
 
-export async function buildWorkbook(result: AnalysisResult, className = '成绩对比') {
+/** 生成多场对比工作簿（按导出内容选择工作表） */
+export async function buildWorkbook(
+  result: SeriesAnalysis,
+  className: string,
+  selection: ExportSelection,
+) {
   const mod = (await import('exceljs')) as unknown as { default?: unknown }
   const ExcelJS = (mod.default ?? mod) as any
   const workbook = new ExcelJS.Workbook()
   workbook.creator = '成绩对比分析系统'
   workbook.created = new Date()
 
-  const subjects = result.subjects
-  const usedNames = new Set<string>()
-  const safeSheet = (name: string) => {
-    let base = String(name).replace(/[\\/*?:[\]]/g, '_').slice(0, 28) || 'Sheet'
+  const labels = result.labels
+  const used = new Set<string>()
+  const sheetName = (name: string) => {
+    const base = String(name).replace(/[\\/*?:[\]]/g, '_').slice(0, 28) || 'Sheet'
     let candidate = base
     let index = 2
-    while (usedNames.has(candidate)) {
+    while (used.has(candidate)) {
       candidate = `${base}(${index})`
       index += 1
     }
-    usedNames.add(candidate)
+    used.add(candidate)
     return candidate
   }
 
-  useSheetStats()
+  const wantAny =
+    selection.summary || selection.total || selection.subjects || selection.stats || selection.notes
 
-  // ---------------- 汇总总览
-  const summary = workbook.addWorksheet(safeSheet('汇总总览'))
-  const summaryHeaders = [
-    '序号', '姓名', `${result.baseLabel}总分`, `${result.targetLabel}总分`, '总分变化',
-    `${result.baseLabel}总分排名`, `${result.targetLabel}总分排名`, '总分排名变化',
-    ...subjects.map((s) => `${s}名次变化`),
-    '上升科目数', '下降科目数', '备注',
-  ]
-  writeTitle(summary, summaryHeaders.length, `${className} · 成绩对比总览`, mergeWarnings(result))
-  writeHeader(summary, 3, summaryHeaders)
-  result.students.forEach((student, index) => {
-    const row = index + 4
-    const values = [
-      index + 1, student.name, student.baseTotal, student.targetTotal, student.totalDelta,
-      student.baseTotalRank, student.targetTotalRank, student.totalRankDelta,
-      ...subjects.map((s) => student.rankDeltas[s]),
-      student.inTarget ? student.upCount : null,
-      student.inTarget ? student.downCount : null,
-      student.inBase ? (student.inTarget ? '' : '仅基准考试有成绩') : '仅对比考试有成绩',
+  if (selection.summary || !wantAny) {
+    const ws = workbook.addWorksheet(sheetName('汇总总览'))
+    const headers = [
+      '序号',
+      '姓名',
+      ...labels.flatMap((label) => [`${label}总分`, `${label}排名`]),
+      '总分变化（首→末）',
+      '排名变化（首→末）',
+      ...result.subjects.map((subject) => `${subject}名次变化`),
+      '上升科目数',
+      '下降科目数',
+      '备注',
     ]
-    values.forEach((value, col) => {
-      const cell = summary.getCell(row, col + 1)
-      cell.value = value as never
-      thinBorder(cell)
-      cell.alignment = { horizontal: col === 1 ? 'left' : 'center', vertical: 'middle' }
-    })
-    summary.getCell(row, 1).value = index + 1
-    summary.getCell(row, 2).value = student.name
-    summary.getCell(row, 2).font = { bold: true }
-    summary.getCell(row, 5).numFmt = '+0.0;-0.0;0.0'
-    applyDeltaStyle(summary.getCell(row, 5), student.totalDelta, false)
-    applyDeltaStyle(summary.getCell(row, 8), student.totalRankDelta, true)
-    subjects.forEach((subject, subjectIndex) => {
-      applyDeltaStyle(summary.getCell(row, 9 + subjectIndex), student.rankDeltas[subject], true)
-    })
-    summary.getRow(row).height = 22
-  })
-  const summaryWidths = summaryHeaders.map((_, index) => {
-    if (index === 0) return 6
-    if (index === 1) return 12
-    if (index === 2 || index === 3) return 14
-    if (index === summaryHeaders.length - 1) return 20
-    return 11
-  })
-  summaryWidths.forEach((width, index) => {
-    summary.getColumn(index + 1).width = width
-  })
-  finishSheet(summary, result.students.length + 3, summaryHeaders.length)
-
-  // ---------------- 明细表（总分 + 各科）
-  const detailRows = (getter: (student: StudentAnalysis) => {
-    baseScore: number | null
-    targetScore: number | null
-    baseRank: number | null
-    targetRank: number | null
-    scoreDelta: number | null
-    rankDelta: number | null
-  }) => {
-    const rows: any[][] = []
+    title(ws, headers.length, `${className} · 多场成绩对比总览`, subtitleOf(result))
+    headerRow(ws, 3, headers)
     result.students.forEach((student, index) => {
-      const values = getter(student)
-      rows.push([
-        index + 1,
-        student.name,
-        values.baseScore,
-        values.baseRank,
-        values.targetScore,
-        values.targetRank,
-        values.scoreDelta,
-        values.rankDelta,
-        deltaWord(values.rankDelta),
-        values.rankDelta == null ? (student.inBase ? '仅基准考试有成绩' : '仅对比考试有成绩') : '',
-        student.baseSrcRank,
-        student.targetSrcRank,
-      ])
-    })
-    return rows
-  }
-
-  const detailHeaders = [
-    '序号', '姓名', `${result.baseLabel}分数`, `${result.baseLabel}排名`,
-    `${result.targetLabel}分数`, `${result.targetLabel}排名`, '分数变化', '排名变化',
-    '变动说明', '备注', '原表基准排名', '原表对比排名',
-  ]
-
-  const totalSheet = workbook.addWorksheet(safeSheet('总分'))
-  writeTitle(totalSheet, detailHeaders.length, '总分 · 排名升降对比', mergeWarnings(result))
-  writeHeader(totalSheet, 3, detailHeaders)
-  detailRows((student) => ({
-    baseScore: student.baseTotal,
-    targetScore: student.targetTotal,
-    baseRank: student.baseTotalRank,
-    targetRank: student.targetTotalRank,
-    scoreDelta: student.totalDelta,
-    rankDelta: student.totalRankDelta,
-  })).forEach((values, index) => {
-    const row = index + 4
-    values.forEach((value, col) => {
-      const cell = totalSheet.getCell(row, col + 1)
-      cell.value = value as never
-      thinBorder(cell)
-      cell.alignment = { horizontal: col === 2 || col === 9 || col === 10 ? 'left' : 'center', vertical: 'middle' }
-      if (col === 2) cell.font = { bold: true }
-    })
-    applyDeltaStyle(totalSheet.getCell(row, 7), values[6], false)
-    applyDeltaStyle(totalSheet.getCell(row, 8), values[7], true)
-    applyDeltaStyle(totalSheet.getCell(row, 9), values[7], true)
-    totalSheet.getRow(row).height = 22
-  })
-  ;[6, 12, 12, 12, 12, 12, 12, 12, 15, 18, 12, 12].forEach((width, index) => {
-    totalSheet.getColumn(index + 1).width = width
-  })
-  finishSheet(totalSheet, result.students.length + 3, detailHeaders.length)
-
-  for (const subject of subjects) {
-    const sheet = workbook.addWorksheet(safeSheet(subject))
-    writeTitle(sheet, detailHeaders.length, `${subject} · 单科排名升降对比`, mergeWarnings(result))
-    writeHeader(sheet, 3, detailHeaders)
-    detailRows((student) => ({
-      baseScore: student.baseScores[subject],
-      targetScore: student.targetScores[subject],
-      baseRank: student.baseRanks[subject],
-      targetRank: student.targetRanks[subject],
-      scoreDelta: student.scoreDeltas[subject],
-      rankDelta: student.rankDeltas[subject],
-    })).forEach((values, index) => {
       const row = index + 4
-      values.forEach((value, col) => {
-        const cell = sheet.getCell(row, col + 1)
-        cell.value = value as never
-        thinBorder(cell)
-        cell.alignment = { horizontal: col === 2 || col === 9 || col === 10 ? 'left' : 'center', vertical: 'middle' }
-        if (col === 2) cell.font = { bold: true }
+      let col = 1
+      ws.getCell(row, col++).value = index + 1
+      ws.getCell(row, col++).value = student.name
+      labels.forEach((_, examIndex) => {
+        ws.getCell(row, col++).value = student.totals[examIndex]
+        ws.getCell(row, col++).value = student.totalRanks[examIndex]
       })
-      applyDeltaStyle(sheet.getCell(row, 7), values[6], false)
-      applyDeltaStyle(sheet.getCell(row, 8), values[7], true)
-      applyDeltaStyle(sheet.getCell(row, 9), values[7], true)
-      sheet.getRow(row).height = 22
+      const totalDeltaCell = ws.getCell(row, col++)
+      totalDeltaCell.value = student.totalDelta
+      applyDelta(totalDeltaCell, student.totalDelta, false)
+      const rankDeltaCell = ws.getCell(row, col++)
+      rankDeltaCell.value = student.totalRankDelta
+      applyDelta(rankDeltaCell, student.totalRankDelta, true)
+      result.subjects.forEach((subject) => {
+        const cell = ws.getCell(row, col++)
+        cell.value = student.rankDeltas[subject]
+        applyDelta(cell, student.rankDeltas[subject], true)
+      })
+      ws.getCell(row, col++).value = student.upCount
+      ws.getCell(row, col++).value = student.downCount
+      ws.getCell(row, col++).value = student.note
+      for (let c = 1; c <= headers.length; c += 1) {
+        border(ws.getCell(row, c))
+        ws.getCell(row, c).alignment = {
+          horizontal: c === 2 || c === headers.length ? 'left' : 'center',
+          vertical: 'middle',
+        }
+      }
+      ws.getCell(row, 2).font = { bold: true }
+      ws.getRow(row).height = 22
     })
-    ;[6, 12, 12, 12, 12, 12, 12, 12, 15, 18, 12, 12].forEach((width, index) => {
-      sheet.getColumn(index + 1).width = width
+    const widths = headers.map((_, index) => {
+      if (index === 0) return 6
+      if (index === 1) return 12
+      if (index === headers.length - 1) return 20
+      return 11
     })
-    finishSheet(sheet, result.students.length + 3, detailHeaders.length)
+    widths.forEach((width, index) => {
+      ws.getColumn(index + 1).width = width
+    })
+    finish(ws, result.students.length + 3, headers.length)
   }
 
-  // ---------------- 科目统计
-  const statsSheet = workbook.addWorksheet(safeSheet('科目统计'))
-  const statHeaders = [
-    '科目', '满分', '基准人数', '对比人数', '基准均分', '对比均分', '均分变化',
-    '基准最高', '对比最高', '基准最低', '对比最低', '名次上升', '名次下降', '名次持平',
-    '及格线', '基准及格', '对比及格',
-  ]
-  writeTitle(statsSheet, statHeaders.length, `${className} · 科目统计`, mergeWarnings(result))
-  writeHeader(statsSheet, 3, statHeaders)
-  const allStats: SubjectStat[] = [...result.stats, result.totalStat]
-  allStats.forEach((stat, index) => {
-    const row = index + 4
-    const values = [
-      stat.subject, stat.fullMark, stat.baseCount, stat.targetCount,
-      stat.baseAvg, stat.targetAvg, stat.avgDelta, stat.baseMax, stat.targetMax,
-      stat.baseMin, stat.targetMin, stat.up, stat.down, stat.flat,
-      stat.passMark, stat.basePassCount, stat.targetPassCount,
+  const detailSheet = (name: string, subject: string | null) => {
+    const ws = workbook.addWorksheet(sheetName(name))
+    const headers = [
+      '序号',
+      '姓名',
+      ...labels.flatMap((label) => [`${label}${subject ? '分数' : '分数'}`, `${label}排名`]),
+      '分数变化（首→末）',
+      '排名变化（首→末）',
+      '变动说明',
+      '备注',
     ]
-    values.forEach((value, col) => {
-      const cell = statsSheet.getCell(row, col + 1)
-      cell.value = value as never
-      thinBorder(cell)
-      cell.alignment = { horizontal: 'center', vertical: 'middle' }
-      if (col === 0) cell.font = { bold: true }
+    title(
+      ws,
+      headers.length,
+      `${subject ?? '总分'} · 多场横向对比`,
+      subject ? `${subtitleOf(result)}；科目：${subject}` : subtitleOf(result),
+    )
+    headerRow(ws, 3, headers)
+    result.students.forEach((student, index) => {
+      const row = index + 4
+      let col = 1
+      ws.getCell(row, col++).value = index + 1
+      ws.getCell(row, col++).value = student.name
+      labels.forEach((_, examIndex) => {
+        ws.getCell(row, col++).value = subject
+          ? student.scores[subject][examIndex]
+          : student.totals[examIndex]
+        ws.getCell(row, col++).value = subject ? student.ranks[subject][examIndex] : student.totalRanks[examIndex]
+      })
+      const scoreDelta = subject ? student.scoreDeltas[subject] : student.totalDelta
+      const rankDelta = subject ? student.rankDeltas[subject] : student.totalRankDelta
+      const scoreCell = ws.getCell(row, col++)
+      scoreCell.value = scoreDelta
+      applyDelta(scoreCell, scoreDelta, false)
+      const rankCell = ws.getCell(row, col++)
+      rankCell.value = rankDelta
+      applyDelta(rankCell, rankDelta, true)
+      ws.getCell(row, col++).value = deltaWord(rankDelta)
+      ws.getCell(row, col++).value = student.note
+      for (let c = 1; c <= headers.length; c += 1) {
+        border(ws.getCell(row, c))
+        ws.getCell(row, c).alignment = {
+          horizontal: c === 2 || c >= headers.length - 1 ? 'left' : 'center',
+          vertical: 'middle',
+        }
+      }
+      ws.getCell(row, 2).font = { bold: true }
+      ws.getRow(row).height = 22
     })
-    applyDeltaStyle(statsSheet.getCell(row, 7), stat.avgDelta, false)
-    statsSheet.getRow(row).height = 24
-  })
-  ;[10, 8, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10].forEach((width, index) => {
-    statsSheet.getColumn(index + 1).width = width
-  })
-  finishSheet(statsSheet, allStats.length + 3, statHeaders.length)
-
-  // ---------------- 说明
-  const notes = workbook.addWorksheet(safeSheet('说明'))
-  notes.getColumn(1).width = 4
-  notes.getColumn(2).width = 110
-  const lines = [
-    ['说明', ''],
-    ['', `生成时间：${new Date().toLocaleString('zh-CN')}`],
-    ['', `基准考试：${result.baseLabel}（文件：${result.baseFileName}）`],
-    ['', `对比考试：${result.targetLabel}（文件：${result.targetFileName}）`],
-    ['', `参考人数：基准 ${result.counts.baseCount} 人，对比 ${result.counts.targetCount} 人，可比 ${result.counts.comparable} 人`],
-    ['', `排名口径：${result.options.rankMode === 'competition' ? '并列名次（同分同名次，后续名次跳号）' : '顺序名次（同分按出现顺序编号）'}`],
-    ['', '排名变化 = 基准名次 − 对比名次：正数表示名次上升，负数表示名次下降，0 表示持平。'],
-    ['', '分数变化 = 对比分数 − 基准分数。分数受试卷难度影响，建议结合名次变化判断进退。'],
-    ['', '总分：若原表提供总分列则直接使用，否则按所选科目求和。'],
-    ['', '本文件由“成绩对比分析系统”生成，所有计算在前端完成，学生原始数据未被上传。'],
-  ]
-  if (result.warnings.length) {
-    lines.push(['', '数据提醒：'])
-    result.warnings.forEach((warning) => lines.push(['', `· ${warning}`]))
+    const widths = headers.map((_, index) => {
+      if (index === 0) return 6
+      if (index === 1) return 12
+      if (index >= headers.length - 2) return 16
+      return 11
+    })
+    widths.forEach((width, index) => {
+      ws.getColumn(index + 1).width = width
+    })
+    finish(ws, result.students.length + 3, headers.length)
   }
-  lines.forEach(([head, body], index) => {
-    const row = index + 1
-    if (head) {
-      const cell = notes.getCell(row, 1)
-      cell.value = head
-      cell.font = { size: 14, bold: true, color: { argb: NAVY } }
+
+  if (selection.total) detailSheet('总分', null)
+  if (selection.subjects) result.subjects.forEach((subject) => detailSheet(subject, subject))
+
+  if (selection.stats) {
+    const ws = workbook.addWorksheet(sheetName('科目统计'))
+    const headers = [
+      '科目',
+      '满分',
+      `${labels[0]}均分`,
+      `${labels[labels.length - 1]}均分`,
+      '均分变化',
+      `${labels[0]}最高`,
+      `${labels[labels.length - 1]}最高`,
+      `${labels[0]}最低`,
+      `${labels[labels.length - 1]}最低`,
+      '名次上升',
+      '名次下降',
+      '名次持平',
+      '及格线',
+      '首场及格',
+      '末场及格',
+    ]
+    title(ws, headers.length, `${className} · 科目统计`, subtitleOf(result))
+    headerRow(ws, 3, headers)
+    ;[...result.stats, result.totalStat].forEach((stat, index) => {
+      const row = index + 4
+      const values = [
+        stat.subject,
+        stat.fullMark,
+        stat.firstAvg,
+        stat.lastAvg,
+        stat.avgDelta,
+        stat.firstMax,
+        stat.lastMax,
+        stat.firstMin,
+        stat.lastMin,
+        stat.up,
+        stat.down,
+        stat.flat,
+        stat.passMark,
+        stat.firstPassCount,
+        stat.lastPassCount,
+      ]
+      values.forEach((value, col) => {
+        const cell = ws.getCell(row, col + 1)
+        cell.value = value as never
+        border(cell)
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        if (col === 0) cell.font = { bold: true }
+      })
+      applyDelta(ws.getCell(row, 5), stat.avgDelta, false)
+      ws.getRow(row).height = 24
+    })
+    const widths = [10, 8, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+    widths.forEach((width, index) => {
+      ws.getColumn(index + 1).width = width
+    })
+    finish(ws, result.stats.length + 4, headers.length)
+  }
+
+  if (selection.notes) {
+    const ws = workbook.addWorksheet(sheetName('说明'))
+    ws.getColumn(1).width = 4
+    ws.getColumn(2).width = 110
+    const lines: [string, string][] = [
+      ['说明', ''],
+      ['', `生成时间：${new Date().toLocaleString('zh-CN')}`],
+      ['', `考试场次（按顺序）：${labels.join(' → ')}`],
+      ['', `参考人数：${labels.map((label, index) => `${label} ${result.counts.examCounts[index]} 人`).join('，')}`],
+      ['', `全程参考：${result.counts.comparableAll} 人；仅首场：${result.counts.firstOnly} 人；仅末场：${result.counts.lastOnly} 人`],
+      ['', `排名口径：${result.options.rankMode === 'competition' ? '并列名次（同分同名次，后续名次跳号）' : '顺序名次（同分按顺序编号）'}`],
+      ['', '排名变化 = 首场名次 − 末场名次：正数表示名次上升，负数表示名次下降，0 表示持平。'],
+      ['', '分数变化 = 末场分数 − 首场分数；中间场次仅展示分数与排名，不单独计算变化。'],
+      ['', '总分：若原表提供总分列则直接使用，否则按所选科目求和。'],
+      ['', '本文件由“成绩对比分析系统”生成，所有计算在浏览器本地完成。'],
+    ]
+    if (result.warnings.length) {
+      lines.push(['', '数据提醒：'])
+      result.warnings.forEach((warning) => lines.push(['', `· ${warning}`]))
     }
-    const cell = notes.getCell(row, 2)
-    cell.value = body
-    cell.font = { size: 10.5 }
-    cell.alignment = { wrapText: true, vertical: 'middle' }
-  })
+    lines.forEach(([head, body], index) => {
+      const row = index + 1
+      if (head) {
+        const cell = ws.getCell(row, 1)
+        cell.value = head
+        cell.font = { size: 14, bold: true, color: { argb: NAVY } }
+      }
+      const cell = ws.getCell(row, 2)
+      cell.value = body
+      cell.font = { size: 10.5 }
+      cell.alignment = { wrapText: true, vertical: 'middle' }
+    })
+  }
 
   return workbook
 }
 
-export async function exportXlsx(result: AnalysisResult, className = '成绩对比') {
-  const workbook = await buildWorkbook(result, className)
+export async function exportXlsx(
+  result: SeriesAnalysis,
+  className: string,
+  selection: ExportSelection,
+) {
+  const workbook = await buildWorkbook(result, className, selection)
   const buffer = await workbook.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  download(blob, `${safeName(className)}_成绩对比_${stamp()}.xlsx`)
+  download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩对比_${stamp()}.xlsx`)
 }
 
-function useSheetStats() {
-  // 预留：如需统计工作表数量可在此扩展
-}
-
-export function exportCsv(result: AnalysisResult, className = '成绩对比') {
+export function exportCsv(result: SeriesAnalysis, className: string) {
   const header = [
-    '序号', '姓名', `${result.baseLabel}总分`, `${result.targetLabel}总分`, '总分变化',
-    `${result.baseLabel}总分排名`, `${result.targetLabel}总分排名`, '总分排名变化',
-    ...result.subjects.map((s) => `${s}名次变化`), '上升科目数', '下降科目数', '备注',
+    '序号',
+    '姓名',
+    ...result.labels.flatMap((label) => [`${label}总分`, `${label}排名`]),
+    '总分变化',
+    '排名变化',
+    ...result.subjects.map((subject) => `${subject}名次变化`),
+    '上升科目数',
+    '下降科目数',
+    '备注',
   ]
   const lines = [header.join(',')]
-  result.students.forEach((student, index) => {
+  result.students.forEach((student: SeriesStudent, index: number) => {
     const values = [
-      index + 1, student.name, fmtScore(student.baseTotal), fmtScore(student.targetTotal),
-      fmtDelta(student.totalDelta), fmtScore(student.baseTotalRank), fmtScore(student.targetTotalRank),
+      index + 1,
+      student.name,
+      ...result.labels.flatMap((_, examIndex) => [
+        fmtScore(student.totals[examIndex]),
+        student.totalRanks[examIndex] ?? '',
+      ]),
+      fmtDelta(student.totalDelta),
       fmtRankDelta(student.totalRankDelta),
-      ...result.subjects.map((s) => fmtRankDelta(student.rankDeltas[s])),
-      student.inTarget ? student.upCount : '', student.inTarget ? student.downCount : '',
-      student.inBase ? (student.inTarget ? '' : '仅基准考试有成绩') : '仅对比考试有成绩',
+      ...result.subjects.map((subject) => fmtRankDelta(student.rankDeltas[subject])),
+      student.upCount,
+      student.downCount,
+      student.note,
     ]
-    lines.push(values.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    lines.push(values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
   })
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  download(blob, `${safeName(className)}_成绩对比_${stamp()}.csv`)
+  download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩对比_${stamp()}.csv`)
 }
-
-
-
