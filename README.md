@@ -4,6 +4,8 @@
 
 纯前端实现，无后端、无数据库，学生成绩不上传服务器；构建产物为静态文件，可直接部署到 **EdgeOne Pages**。
 
+![结果页](docs/screenshot-result.png)
+
 ## 能做什么
 
 - **两份成绩单对比**：基准考试（如月考）× 对比考试（如期中）
@@ -25,6 +27,12 @@ npm run dev        # 本地开发 http://localhost:5173
 npm run build      # 构建到 dist/
 npm run preview    # 预览构建产物 http://localhost:4173
 npm test           # 单元测试（分析逻辑 + Excel 导出）
+```
+
+可选：浏览器冒烟测试（需先 `npm run preview`，并使用本机 Edge）：
+
+```bash
+npm run smoke      # 自动打开示例、点击“导出 Excel”、校验生成的工作表
 ```
 
 ## 使用流程
