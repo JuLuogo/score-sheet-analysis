@@ -1,0 +1,33 @@
+{
+  "name": "grade-compare",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "成绩对比分析系统：两次考试成绩对比、单科排名升降、Excel 导出，纯前端可部署 EdgeOne Pages",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.mjs",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "echarts": "^6.1.0",
+    "exceljs": "^4.4.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "oxlint": "^1.90.0",
+    "playwright-core": "^1.65.1",
+    "typescript": "~5.9.3",
+    "vite": "^6.4.6",
+    "vitest": "^5.1.0"
+  }
+}
