@@ -25,6 +25,7 @@ import {
   upsertTemplate,
 } from './lib/storage'
 import UploadStage from './components/UploadStage.vue'
+import LandingUpload from './components/LandingUpload.vue'
 import MappingStage from './components/MappingStage.vue'
 import SelectStage from './components/SelectStage.vue'
 import ResultStage from './components/ResultStage.vue'
@@ -78,6 +79,9 @@ watch(
   },
   { deep: true },
 )
+
+const landingActive = ref(true)
+const showLanding = computed(() => landingActive.value && !result.value)
 
 const result = computed(() => {
   if (exams.value.length < 2) return null
@@ -180,6 +184,12 @@ const goMapping = () => {
   stage.value = 'mapping'
 }
 
+const startWorkspace = () => {
+  if (drafts.value.length < 2) return
+  landingActive.value = false
+  goMapping()
+}
+
 const goSelect = () => {
   error.value = ''
   for (const draft of drafts.value) {
@@ -227,6 +237,7 @@ const runAnalysis = () => {
 }
 
 const handleDemo = (to: 'mapping' | 'select' | 'result' = 'result') => {
+  landingActive.value = false
   const demo = makeDemo()
   const nextDrafts: ExamDraft[] = demo.exams.map((exam) => ({
     id: exam.id,
@@ -319,6 +330,7 @@ const saveHistory = () => {
 }
 
 const restoreHistory = (item: HistoryItem) => {
+  landingActive.value = false
   exams.value = item.exams
   options.value = item.options
   selection.value = item.selection
@@ -342,6 +354,7 @@ const doExportXlsx = async () => {
 }
 
 const reset = () => {
+  landingActive.value = true
   stage.value = 'upload'
   drafts.value = []
   selectedIds.value = []
@@ -458,7 +471,17 @@ onMounted(() => {
 })
 </script>
 <template>
-  <div class="shell">
+  <LandingUpload
+    v-if="showLanding"
+    :drafts="drafts"
+    :busy="busy > 0"
+    :error="error"
+    @files="addFiles"
+    @remove="removeDraft"
+    @next="startWorkspace"
+    @demo="handleDemo('result')"
+  />
+  <div v-else class="shell">
     <aside class="sidebar">
       <div class="sidebar-brand">
         <span class="brand-dot">成</span>
@@ -569,6 +592,8 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+
 
 
 

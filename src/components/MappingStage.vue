@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { AnalysisOptions, ExamConfig, ExamDraft, Template } from '../types'
 import { detectHeaderRow, guessConfig } from '../lib/parse'
@@ -289,11 +289,11 @@ const applySelected = (id: string) => {
             <el-col :span="8">
               <el-form-item label="总分列">
                 <el-select
-                  :model-value="active.config.totalCol ?? ''"
+                  :model-value="active.config.totalCol ?? 'none'"
                   style="width: 100%"
-                  @change="(value: number | '') => patchConfig({ ...active.config, totalCol: value === '' ? null : Number(value) })"
+                  @change="(value: number | 'none') => patchConfig({ ...active.config, totalCol: value === 'none' ? null : Number(value) })"
                 >
-                  <el-option label="按科目求和" value="" />
+                  <el-option label="按科目求和" value="none" />
                   <el-option v-for="item in headerOptions" :key="item.index" :label="item.text" :value="item.index" />
                 </el-select>
               </el-form-item>
@@ -301,11 +301,11 @@ const applySelected = (id: string) => {
             <el-col :span="8">
               <el-form-item label="原表排名列（可选）">
                 <el-select
-                  :model-value="active.config.rankCol ?? ''"
+                  :model-value="active.config.rankCol ?? 'none'"
                   style="width: 100%"
-                  @change="(value: number | '') => patchConfig({ ...active.config, rankCol: value === '' ? null : Number(value) })"
+                  @change="(value: number | 'none') => patchConfig({ ...active.config, rankCol: value === 'none' ? null : Number(value) })"
                 >
-                  <el-option label="不使用" value="" />
+                  <el-option label="不使用" value="none" />
                   <el-option v-for="item in headerOptions" :key="item.index" :label="item.text" :value="item.index" />
                 </el-select>
               </el-form-item>
@@ -419,6 +419,7 @@ const applySelected = (id: string) => {
     </div>
   </div>
 </template>
+
 
 
 

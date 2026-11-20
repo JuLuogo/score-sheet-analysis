@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #f5f5f5;
   --panel: #ffffff;
   --line: #e3e3e3;
@@ -982,3 +982,249 @@ body {
     justify-content: flex-start;
   }
 }
+
+/* ---------------- landing ---------------- */
+.landing {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f5f5f5;
+}
+
+.landing-head {
+  flex: none;
+  height: 64px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfb;
+}
+
+.landing-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.landing-brand strong {
+  display: block;
+  font-size: 14px;
+  color: #1f1f1f;
+}
+
+.landing-brand span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.landing-privacy {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.landing-main {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.landing-alert {
+  width: calc(100vw - 48px);
+}
+
+.landing-upload,
+.landing-upload .el-upload {
+  width: calc(100vw - 48px);
+}
+
+.landing-upload .el-upload-dragger {
+  width: 100%;
+  height: 62vh;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1.5px dashed #cfcfcf;
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.landing-upload .el-upload-dragger:hover {
+  border-color: #8a8a8a;
+  background: #fcfcfc;
+}
+
+.landing-main.has-files .landing-upload .el-upload-dragger {
+  height: 30vh;
+  min-height: 150px;
+}
+
+.landing-drop {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.landing-icon {
+  font-size: 46px;
+  color: #9a9a9a;
+  margin-bottom: 4px;
+}
+
+.landing-drop h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  color: #222;
+}
+
+.landing-drop p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.landing-drop .landing-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.landing-files {
+  width: calc(100vw - 48px);
+  max-height: 190px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+
+.landing-files-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+
+.landing-files-head strong {
+  font-size: 13px;
+  color: #222;
+}
+
+.landing-files-head span {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.landing-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f4f4f4;
+}
+
+.landing-file:last-child {
+  border-bottom: 0;
+}
+
+.landing-file-index {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  background: #f1f1f1;
+  color: #666;
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.landing-file-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.landing-file-main strong {
+  display: block;
+  font-size: 13px;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-file-main span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-actions {
+  width: calc(100vw - 48px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.landing-tip {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.landing-foot {
+  flex: none;
+  height: 46px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  background: #fbfbfb;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.landing-foot :deep(.el-button) {
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .landing-head,
+  .landing-foot {
+    padding: 0 14px;
+  }
+  .landing-main {
+    padding: 12px;
+  }
+  .landing-upload .el-upload-dragger {
+    height: 46vh;
+  }
+  .landing-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
