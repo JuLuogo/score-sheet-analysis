@@ -1,4 +1,4 @@
-# 成绩单数据分析（Grade Sheet Analytics）
+﻿# 成绩单数据分析（Grade Sheet Analytics）
 
 把多次考试（第一次月考、第二次月考、期中考试……）横向排开，一眼看到**每个学生、每个科目的分数走势与名次升降**，并按需导出 Excel。
 
@@ -22,6 +22,17 @@
 - **导出 CSV**、浏览器打印
 - **模板与历史**：字段映射保存为模板，换班级/换考试一键套用；最近分析存本机可恢复
 - **示例数据**：`?demo=1` 直接看结果，`?demo=mapping` 看字段确认，`?demo=select` 看场次选择
+
+## 测试
+
+```bash
+npm test                       # 单元测试：解析、排名、导出
+npm run build                  # 类型检查 + 生产构建
+npm run preview -- --port 4173 # 另开终端，供 E2E 使用
+npm run test:e2e               # 浏览器端到端：上传、字段、场次、菜单、导出、响应式
+```
+
+测试报告见 [TEST_REPORT.md](TEST_REPORT.md)。
 
 ## 快速开始
 
@@ -117,6 +128,7 @@ edgeone pages deploy -n score-sheet-analysis
 - 中间场次只展示分数与排名，趋势以首末两场为准
 - 分数受试卷难度影响，建议结合名次变化判断进退
 - 本工具只做统计，不替代学校正式成绩分析结论
+
 
 
 

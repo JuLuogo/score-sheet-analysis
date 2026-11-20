@@ -164,6 +164,23 @@ body {
   border-top: 1px solid var(--line);
   color: #9a9a9a;
   font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.reset-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #777;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.reset-link:hover {
+  color: #c0392b;
 }
 
 .workspace {
@@ -1228,3 +1245,36 @@ body {
   }
 }
 
+
+
+.landing-foot-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.landing-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.landing-history-row:last-child {
+  border-bottom: 0;
+}
+
+.landing-history-row strong {
+  display: block;
+  font-size: 13px;
+  color: #222;
+}
+
+.landing-history-row span {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}

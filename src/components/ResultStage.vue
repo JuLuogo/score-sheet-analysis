@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import ChartPanel from './ChartPanel.vue'
@@ -190,13 +190,13 @@ const filteredRows = computed(() => {
 
 const upTop = computed(() =>
   [...props.result.students]
-    .filter((student) => student.totalRankDelta != null)
+    .filter((student) => (student.totalRankDelta ?? 0) > 0)
     .sort((a, b) => (b.totalRankDelta ?? 0) - (a.totalRankDelta ?? 0))
     .slice(0, 5),
 )
 const downTop = computed(() =>
   [...props.result.students]
-    .filter((student) => student.totalRankDelta != null)
+    .filter((student) => (student.totalRankDelta ?? 0) < 0)
     .sort((a, b) => (a.totalRankDelta ?? 0) - (b.totalRankDelta ?? 0))
     .slice(0, 5),
 )
@@ -220,8 +220,8 @@ const summaryColumns = computed<Col[]>(() => {
     })
     list.push({
       key: `rank-${examIndex}`,
-      label: '排名',
-      width: 64,
+      label: `${label} 排名`,
+      width: 72,
       kind: 'rank',
       get: (row) => row.totalRanks[examIndex],
     })
@@ -255,15 +255,15 @@ const subjectColumns = computed<Col[]>(() => {
   props.result.labels.forEach((label, examIndex) => {
     list.push({
       key: `score-${examIndex}`,
-      label: `${label}分数`,
-      width: 96,
+      label: `${label} ${subject.value}`,
+      width: 112,
       kind: 'score',
       get: (row) => row.scores[subject.value]?.[examIndex] ?? null,
     })
     list.push({
       key: `rank-${examIndex}`,
-      label: '排名',
-      width: 64,
+      label: `${label} 排名`,
+      width: 84,
       kind: 'rank',
       get: (row) => row.ranks[subject.value]?.[examIndex] ?? null,
     })
@@ -320,7 +320,7 @@ const printPage = () => window.print()
         <el-button size="small" :disabled="saved" @click="emit('save')">
           {{ saved ? '已存本机' : '存本机' }}
         </el-button>
-        <el-button size="small" type="primary" :loading="exporting" @click="emit('exportXlsx')">
+        <el-button size="small" type="primary" :disabled="exportCount === 0" :loading="exporting" @click="emit('exportXlsx')">
           导出 Excel
         </el-button>
         <el-button size="small" @click="printPage">打印</el-button>
@@ -501,7 +501,7 @@ const printPage = () => window.print()
           </el-radio-group>
         </div>
         <div v-if="currentStat" class="subject-summary">
-          均分 {{ fmtScore(currentStat.firstAvg) }} → {{ fmtScore(currentStat.lastAvg) }}
+          当前科目：{{ subject }} · 均分 {{ fmtScore(currentStat.firstAvg) }} → {{ fmtScore(currentStat.lastAvg) }}
           <span :class="toneClass(currentStat.avgDelta)">{{ fmtDelta(currentStat.avgDelta) }}</span>
           · 名次上升 {{ currentStat.up }} / 下降 {{ currentStat.down }} / 持平 {{ currentStat.flat }}
         </div>
@@ -570,13 +570,16 @@ const printPage = () => window.print()
       </div>
       <template #footer>
         <el-button @click="dialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="exporting" @click="dialogVisible = false; emit('exportXlsx')">
+        <el-button type="primary" :disabled="exportCount === 0" :loading="exporting" @click="dialogVisible = false; emit('exportXlsx')">
           导出 Excel
         </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
+
+
+
 
 
 

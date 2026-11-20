@@ -37,3 +37,5 @@ deliverables/*.csv
 preview.log
 preview.err
 
+
+.test-artifacts/

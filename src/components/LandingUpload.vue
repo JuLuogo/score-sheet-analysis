@@ -1,18 +1,21 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref } from 'vue'
 import type { UploadFile, UploadInstance } from 'element-plus'
-import type { ExamDraft } from '../types'
+import type { ExamDraft, HistoryItem } from '../types'
 
-defineProps<{ drafts: ExamDraft[]; busy: boolean; error: string }>()
+defineProps<{ drafts: ExamDraft[]; busy: boolean; error: string; history: HistoryItem[] }>()
 
 const emit = defineEmits<{
   files: [files: File[]]
   remove: [id: string]
   next: []
   demo: []
+  restore: [item: HistoryItem]
+  removeHistory: [id: string]
 }>()
 
 const uploadRef = ref<UploadInstance>()
+const historyVisible = ref(false)
 
 const handleChange = (file: UploadFile) => {
   if (file.raw) emit('files', [file.raw])
@@ -87,9 +90,30 @@ const handleChange = (file: UploadFile) => {
     </main>
 
     <footer class="landing-foot">
-      <span>没有文件？<el-button link type="primary" @click="emit('demo')">载入示例数据</el-button></span>
+      <span class="landing-foot-left">
+        没有文件？<el-button link type="primary" @click="emit('demo')">载入示例数据</el-button>
+        <el-button v-if="history.length" link @click="historyVisible = true">
+          最近分析（{{ history.length }}）
+        </el-button>
+      </span>
       <span>没有排名列、没有总分列也能分析，名次由系统自动计算</span>
     </footer>
+
+    <el-dialog v-model="historyVisible" title="最近分析" width="520px">
+      <div v-for="item in history" :key="item.id" class="landing-history-row">
+        <div>
+          <strong>{{ item.title }}</strong>
+          <span>{{ item.labels.join(' → ') }} · 全程参考 {{ item.counts.comparableAll }} 人</span>
+        </div>
+        <div class="row-gap">
+          <el-button size="small" @click="emit('restore', item); historyVisible = false">恢复</el-button>
+          <el-button size="small" link type="danger" @click="emit('removeHistory', item.id)">
+            删除
+          </el-button>
+        </div>
+      </div>
+      <el-empty v-if="!history.length" description="还没有历史记录" :image-size="60" />
+    </el-dialog>
   </div>
 </template>
 

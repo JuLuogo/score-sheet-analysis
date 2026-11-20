@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type {
@@ -476,10 +476,13 @@ onMounted(() => {
     :drafts="drafts"
     :busy="busy > 0"
     :error="error"
+    :history="history"
     @files="addFiles"
     @remove="removeDraft"
     @next="startWorkspace"
     @demo="handleDemo('result')"
+    @restore="restoreHistory"
+    @remove-history="deleteHistory"
   />
   <div v-else class="shell">
     <aside class="sidebar">
@@ -509,7 +512,10 @@ onMounted(() => {
         </div>
       </nav>
 
-      <div class="sidebar-footer">本地处理 · 成绩不上传</div>
+      <div class="sidebar-footer">
+        <span>本地处理 · 成绩不上传</span>
+        <button v-if="drafts.length || result" type="button" class="reset-link" @click="reset">重新开始</button>
+      </div>
     </aside>
 
     <div class="workspace">
@@ -592,6 +598,8 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+
 
 
 
