@@ -1,4 +1,4 @@
-# 成绩对比分析系统（Grade Compare）
+﻿# 成绩对比分析系统（Grade Compare）
 
 把多次考试（第一次月考、第二次月考、期中考试……）横向排开，一眼看到**每个学生、每个科目的分数走势与名次升降**，并按需导出 Excel。
 
@@ -58,7 +58,7 @@ npm run smoke      # 打开示例 → 导出 Excel → 校验生成的工作表
 
 ## 技术栈
 
-- Vite 6 + React 19 + TypeScript
+- Vue 3 + Element Plus 2（组件库）+ Vite 6 + TypeScript
 - ExcelJS（解析与导出，按需加载）
 - ECharts 6（图表，按需加载）
 
@@ -66,14 +66,14 @@ npm run smoke      # 打开示例 → 导出 Excel → 校验生成的工作表
 
 ```
 src/
-  App.tsx                 四步流程与状态管理
+  main.ts                 Vue 入口 + Element Plus 注册
+  App.vue                 四步流程与状态管理
   components/
-    UploadStage.tsx       上传 / 示例 / 历史
-    MappingStage.tsx      逐份字段确认 + 分析口径 + 模板
-    SelectStage.tsx       选择场次、排序、选择导出表
-    ResultStage.tsx       结果页（总览 / 汇总矩阵 / 单科矩阵 / 说明）
-    DataTable.tsx         可排序、可搜索表格
-    Chart.tsx             ECharts 容器
+    UploadStage.vue       上传 / 示例 / 历史
+    MappingStage.vue      逐份字段确认 + 分析口径 + 模板
+    SelectStage.vue       选择场次、排序、选择导出表
+    ResultStage.vue       结果页（总览 / 汇总矩阵 / 单科矩阵 / 说明）
+    ChartPanel.vue        ECharts 容器
   lib/
     parse.ts              表格解析、表头识别、学生记录构建
     analyze.ts            多场排名、升降、统计、分数段（纯函数）
@@ -114,3 +114,4 @@ edgeone pages deploy -n grade-compare
 - 中间场次只展示分数与排名，趋势以首末两场为准
 - 分数受试卷难度影响，建议结合名次变化判断进退
 - 本工具只做统计，不替代学校正式成绩分析结论
+
