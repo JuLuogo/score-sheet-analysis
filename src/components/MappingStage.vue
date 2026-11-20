@@ -1,8 +1,9 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { AnalysisOptions, ExamConfig, ExamDraft, Template } from '../types'
 import { detectHeaderRow, guessConfig } from '../lib/parse'
 import { Delete } from '@element-plus/icons-vue'
+import PanelBox from './PanelBox.vue'
 
 type Status = { ok: true; count: number; subjects: number } | { ok: false; message: string }
 
@@ -96,19 +97,23 @@ const previewData = computed(() => {
     .filter((row) => row.some((cell) => cell != null && String(cell).trim() !== ''))
     .map((row) => {
       const record: Record<string, unknown> = {}
-      for (let col = 0; col < previewCols.value; col += 1) {
+      for (let col = 0; col < previewCols.value.length; col += 1) {
         record[`c${col}`] = row[col] ?? ''
       }
       return record
     })
 })
 const previewCols = computed(() => {
-  if (!active.value) return 1
-  let last = 0
-  header.value.forEach((cell, index) => {
-    if (cell != null && String(cell).trim() !== '') last = index + 1
-  })
-  return Math.min(Math.max(last, 1), 12)
+  if (!active.value) return [0]
+  const config = active.value.config
+  const maxCol = Math.max(
+    config.nameCol,
+    config.totalCol ?? -1,
+    config.rankCol ?? -1,
+    ...config.subjectCols.map((item) => item.col),
+  )
+  const count = Math.min(Math.max(maxCol + 1, 1), 12)
+  return Array.from({ length: count }, (_, index) => index)
 })
 
 const update = (patch: Partial<ExamDraft>) => {
@@ -188,8 +193,8 @@ const applySelected = (id: string) => {
   <div class="stage mapping-stage">
     <div class="stage-head">
       <div>
-        <h1>确认每份成绩单的字段</h1>
-        <p class="stage-sub">自动识别有误时手动改；左侧切换考试，改完一起进入下一步。</p>
+        <h1>成绩单字段确认</h1>
+        <p class="stage-sub">自动识别有误时手动修正；左侧切换场次，改完一起进入下一步。</p>
       </div>
       <div class="row-gap">
         <el-button @click="emit('back')">返回上传</el-button>
@@ -202,7 +207,8 @@ const applySelected = (id: string) => {
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="mb-16" />
 
     <div class="mapping-layout">
-      <el-card shadow="never" class="exam-aside">
+      <PanelBox title="已接入成绩单" class="exam-aside" dense>
+        <template #extra>{{ drafts.length }} 份</template>
         <div
           v-for="(draft, index) in drafts"
           :key="draft.id"
@@ -220,29 +226,19 @@ const applySelected = (id: string) => {
             <Warning v-else />
           </el-icon>
         </div>
-      </el-card>
+      </PanelBox>
 
-      <el-card v-if="active" shadow="never" class="mapping-panel">
-        <template #header>
-          <div class="card-head">
-            <strong>{{ active.label }}</strong>
-            <div class="row-gap">
-              <span class="muted small">{{ active.workbook.fileName }}</span>
-              <el-button
-                link
-                type="danger"
-                :disabled="drafts.length <= 2"
-                @click="emit('remove', active.id)"
-              >
-                移除
-              </el-button>
-            </div>
-          </div>
+      <PanelBox v-if="active" :title="active.label" class="mapping-panel">
+        <template #extra>
+          <span class="muted small">{{ active.workbook.fileName }}</span>
+          <el-button link type="danger" :disabled="drafts.length <= 2" @click="emit('remove', active.id)">
+            移除
+          </el-button>
         </template>
 
         <el-form label-position="top" class="mapping-form">
-          <el-row :gutter="14">
-            <el-col :xs="24" :sm="12">
+          <el-row :gutter="12">
+            <el-col :span="8">
               <el-form-item label="考试名称">
                 <el-input
                   :model-value="active.label"
@@ -250,13 +246,9 @@ const applySelected = (id: string) => {
                 />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12">
+            <el-col :span="8">
               <el-form-item label="工作表">
-                <el-select
-                  :model-value="active.sheetIndex"
-                  style="width: 100%"
-                  @change="changeSheet"
-                >
+                <el-select :model-value="active.sheetIndex" style="width: 100%" @change="changeSheet">
                   <el-option
                     v-for="(sheet, index) in active.workbook.sheets"
                     :key="`${sheet.name}-${index}`"
@@ -266,7 +258,7 @@ const applySelected = (id: string) => {
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12">
+            <el-col :span="8">
               <el-form-item label="表头所在行">
                 <el-select :model-value="active.headerRow" style="width: 100%" @change="changeHeader">
                   <el-option
@@ -277,29 +269,24 @@ const applySelected = (id: string) => {
                       .map((cell) => (cell == null ? '' : String(cell)))
                       .filter(Boolean)
                       .join('、')
-                      .slice(0, 26)}`"
+                      .slice(0, 20)}`"
                     :value="index"
                   />
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12">
+            <el-col :span="8">
               <el-form-item label="姓名列">
                 <el-select
                   :model-value="active.config.nameCol"
                   style="width: 100%"
                   @change="(value: number) => patchConfig({ ...active.config, nameCol: value })"
                 >
-                  <el-option
-                    v-for="item in headerOptions"
-                    :key="item.index"
-                    :label="item.text"
-                    :value="item.index"
-                  />
+                  <el-option v-for="item in headerOptions" :key="item.index" :label="item.text" :value="item.index" />
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12">
+            <el-col :span="8">
               <el-form-item label="总分列">
                 <el-select
                   :model-value="active.config.totalCol ?? ''"
@@ -307,16 +294,11 @@ const applySelected = (id: string) => {
                   @change="(value: number | '') => patchConfig({ ...active.config, totalCol: value === '' ? null : Number(value) })"
                 >
                   <el-option label="按科目求和" value="" />
-                  <el-option
-                    v-for="item in headerOptions"
-                    :key="item.index"
-                    :label="item.text"
-                    :value="item.index"
-                  />
+                  <el-option v-for="item in headerOptions" :key="item.index" :label="item.text" :value="item.index" />
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12">
+            <el-col :span="8">
               <el-form-item label="原表排名列（可选）">
                 <el-select
                   :model-value="active.config.rankCol ?? ''"
@@ -324,12 +306,7 @@ const applySelected = (id: string) => {
                   @change="(value: number | '') => patchConfig({ ...active.config, rankCol: value === '' ? null : Number(value) })"
                 >
                   <el-option label="不使用" value="" />
-                  <el-option
-                    v-for="item in headerOptions"
-                    :key="item.index"
-                    :label="item.text"
-                    :value="item.index"
-                  />
+                  <el-option v-for="item in headerOptions" :key="item.index" :label="item.text" :value="item.index" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -348,16 +325,17 @@ const applySelected = (id: string) => {
         <el-table
           :data="previewData"
           size="small"
-          class="mt-12 preview-table"
+          class="preview-table"
           :cell-class-name="cellClassName"
           border
+          height="170"
         >
           <el-table-column
             v-for="col in previewCols"
             :key="col"
             :prop="`c${col}`"
             :label="String(header[col] ?? '')"
-            min-width="72"
+            min-width="78"
           />
         </el-table>
 
@@ -368,111 +346,79 @@ const applySelected = (id: string) => {
           :closable="false"
           show-icon
         />
-      </el-card>
+
+        <div class="mapping-sub">
+          <div class="mapping-sub-col">
+            <div class="field-label">排名口径</div>
+            <el-radio-group
+              :model-value="options.rankMode"
+              @change="(value) => emit('options', { ...options, rankMode: value as AnalysisOptions['rankMode'] })"
+            >
+              <el-radio-button value="competition">并列名次</el-radio-button>
+              <el-radio-button value="sequential">顺序名次</el-radio-button>
+            </el-radio-group>
+            <div class="field-hint">
+              {{ options.rankMode === 'competition' ? '同分同名次，后续名次跳号' : '同分按出现顺序编号' }}
+            </div>
+          </div>
+          <div class="mapping-sub-col">
+            <div class="field-label">分数段宽度</div>
+            <el-select
+              :model-value="options.bucketSize"
+              style="width: 170px"
+              @change="(value: number) => emit('options', { ...options, bucketSize: value })"
+            >
+              <el-option v-for="size in [20, 30, 40, 50, 60, 100]" :key="size" :label="`${size} 分一段`" :value="size" />
+            </el-select>
+          </div>
+        </div>
+
+        <div class="marks-hint">每行依次为：科目 / 满分 / 及格线（满分与及格线可留空）</div>
+        <div class="marks-grid">
+          <div v-for="subject in subjects" :key="subject" class="mark-item">
+            <span>{{ subject }}</span>
+            <el-input-number
+              :model-value="markValue(options.fullMarks, subject)"
+              :min="0"
+              :controls="false"
+              placeholder="满分"
+              @change="(value?: number) => setMark('fullMarks', subject, value)"
+            />
+            <el-input-number
+              :model-value="markValue(options.passMarks, subject)"
+              :min="0"
+              :controls="false"
+              placeholder="及格线"
+              @change="(value?: number) => setMark('passMarks', subject, value)"
+            />
+          </div>
+        </div>
+
+        <div class="template-save mt-12">
+          <el-input v-model="templateName" placeholder="模板名称，如：24汽修月考模板" style="max-width: 260px" />
+          <el-button :disabled="!templateName.trim()" @click="submitTemplate">保存字段模板</el-button>
+          <el-select v-if="templates.length" placeholder="应用模板…" style="width: 180px" @change="applySelected">
+            <el-option v-for="item in templates" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+          <el-button
+            v-for="item in templates"
+            :key="`del-${item.id}`"
+            link
+            type="danger"
+            @click="emit('deleteTemplate', item.id)"
+          >
+            <el-icon><Delete /></el-icon>
+          </el-button>
+        </div>
+      </PanelBox>
     </div>
 
-    <el-card shadow="never" class="mt-16">
-      <template #header>
-        <div class="card-head">
-          <strong>分析口径</strong>
-          <span class="muted small">影响名次与及格统计</span>
-        </div>
-      </template>
-      <el-row :gutter="24">
-        <el-col :xs="24" :sm="12">
-          <div class="field-label">排名方式</div>
-          <el-radio-group
-            :model-value="options.rankMode"
-            @change="(value) => emit('options', { ...options, rankMode: value as AnalysisOptions['rankMode'] })"
-          >
-            <el-radio-button value="competition">并列名次</el-radio-button>
-            <el-radio-button value="sequential">顺序名次</el-radio-button>
-          </el-radio-group>
-          <div class="field-hint">
-            {{ options.rankMode === 'competition' ? '同分同名次，后续名次跳号（1、2、2、4）' : '同分按出现顺序编号' }}
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12">
-          <div class="field-label">分数段宽度</div>
-          <el-select
-            :model-value="options.bucketSize"
-            @change="(value: number) => emit('options', { ...options, bucketSize: value })"
-          >
-            <el-option v-for="size in [20, 30, 40, 50, 60, 100]" :key="size" :label="`${size} 分一段`" :value="size" />
-          </el-select>
-          <div class="field-hint">用于首末场分数段对比</div>
-        </el-col>
-      </el-row>
-
-      <el-table :data="subjects.map((subject) => ({ subject }))" size="small" class="mt-16" border>
-        <el-table-column prop="subject" label="科目" width="140" />
-        <el-table-column label="满分（可选）" width="180">
-          <template #default="{ row }">
-            <el-input-number
-              :model-value="markValue(options.fullMarks, row.subject)"
-              :min="0"
-              :controls="false"
-              placeholder="如 120"
-              style="width: 120px"
-              @change="(value?: number) => setMark('fullMarks', row.subject, value)"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column label="及格线（可选）" width="180">
-          <template #default="{ row }">
-            <el-input-number
-              :model-value="markValue(options.passMarks, row.subject)"
-              :min="0"
-              :controls="false"
-              placeholder="如 72"
-              style="width: 120px"
-              @change="(value?: number) => setMark('passMarks', row.subject, value)"
-            />
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-card shadow="never" class="mt-16">
-      <template #header>
-        <div class="card-head">
-          <strong>字段模板</strong>
-          <span class="muted small">下次同类成绩单自动按表头匹配</span>
-        </div>
-      </template>
-      <div class="template-save">
-        <el-input v-model="templateName" placeholder="模板名称，如：24汽修月考模板" style="max-width: 280px" />
-        <el-button :disabled="!templateName.trim()" @click="submitTemplate">保存当前字段</el-button>
-        <el-select
-          v-if="templates.length"
-          placeholder="应用模板…"
-          style="width: 200px"
-          @change="applySelected"
-        >
-          <el-option v-for="item in templates" :key="item.id" :label="item.name" :value="item.id" />
-        </el-select>
-        <el-button
-          v-for="item in templates"
-          :key="`del-${item.id}`"
-          link
-          type="danger"
-          @click="emit('deleteTemplate', item.id)"
-        >
-          <el-icon><Delete /></el-icon>
-        </el-button>
-      </div>
-    </el-card>
-
     <div class="floating-actions">
-      <span>
-        共 {{ drafts.length }} 份 ·
-        {{ allOk ? '字段检查通过' : '还有未通过的字段，请检查左侧红色标记' }}
-      </span>
+      <span>共 {{ drafts.length }} 份 · {{ allOk ? '字段检查通过' : '还有未通过的字段，请检查左侧红色标记' }}</span>
       <el-button type="primary" :disabled="!allOk" @click="emit('next')">下一步：选择场次</el-button>
     </div>
   </div>
 </template>
-
 
 
 

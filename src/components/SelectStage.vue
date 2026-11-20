@@ -1,7 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed } from 'vue'
 import type { ExamDraft, ExportSelection } from '../types'
 import { ArrowDown, ArrowUp } from '@element-plus/icons-vue'
+import PanelBox from './PanelBox.vue'
 
 const props = defineProps<{
   drafts: ExamDraft[]
@@ -36,6 +37,20 @@ const canRun = computed(
   () => selected.value.length >= 2 && Object.values(props.selection).some(Boolean),
 )
 
+const subjectCount = computed(
+  () => new Set(props.drafts.flatMap((draft) => draft.config.subjectCols.map((item) => item.name))).size,
+)
+
+const sheetCount = computed(() => {
+  let count = 0
+  if (props.selection.summary) count += 1
+  if (props.selection.total) count += 1
+  if (props.selection.subjects) count += subjectCount.value
+  if (props.selection.stats) count += 1
+  if (props.selection.notes) count += 1
+  return count
+})
+
 const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
   emit('selection', { ...props.selection, [key]: value })
 }
@@ -46,9 +61,7 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
     <div class="stage-head">
       <div>
         <h1>选择对比场次与导出内容</h1>
-        <p class="stage-sub">
-          勾选的场次会横向排开；第一场自动作为基准，名次与分数变化按“第一场 → 最后一场”计算。
-        </p>
+        <p class="stage-sub">第一场为基准；名次与分数变化按“第一场 → 最后一场”计算。</p>
       </div>
       <div class="row-gap">
         <el-button @click="emit('back')">返回字段</el-button>
@@ -59,18 +72,12 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="mb-16" />
 
     <div class="select-layout">
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-head">
-            <strong>参与对比的考试（{{ selected.length }}）</strong>
-            <span class="muted small">顺序即展示顺序，第一场为基准</span>
-          </div>
-        </template>
-
+      <PanelBox :title="`参与对比的考试（${selected.length}）`" class="dense">
+        <template #extra>顺序即展示顺序，第一场为基准</template>
         <div class="compare-list">
           <div v-for="(draft, index) in selected" :key="draft.id" class="compare-item">
             <el-checkbox :model-value="true" @change="emit('toggle', draft.id)" />
-            <el-tag :type="index === 0 ? 'primary' : 'info'" size="small" effect="dark" round>
+            <el-tag :type="index === 0 ? 'primary' : 'info'" size="small" effect="dark">
               {{ index === 0 ? '基准' : index + 1 }}
             </el-tag>
             <div class="compare-main">
@@ -78,25 +85,24 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
               <span>{{ draft.workbook.fileName }}</span>
             </div>
             <div class="row-gap">
-              <el-button
-                size="small"
-                text
-                :disabled="index === 0"
-                @click="emit('move', draft.id, -1)"
-              >
+              <el-button size="small" text :disabled="index === 0" @click="emit('move', draft.id, -1)">
                 <el-icon><ArrowUp /></el-icon>
               </el-button>
-              <el-button
-                size="small"
-                text
-                :disabled="index === selected.length - 1"
-                @click="emit('move', draft.id, 1)"
-              >
+              <el-button size="small" text :disabled="index === selected.length - 1" @click="emit('move', draft.id, 1)">
                 <el-icon><ArrowDown /></el-icon>
               </el-button>
             </div>
           </div>
-          <el-empty v-if="selected.length < 2" description="至少勾选 2 场" :image-size="64" />
+          <el-empty v-if="selected.length < 2" description="至少勾选 2 场" :image-size="52" />
+        </div>
+        <div v-if="selected.length" class="flow-preview">
+          <template v-for="(draft, index) in selected" :key="`flow-${draft.id}`">
+            <span v-if="index > 0" class="flow-arrow">→</span>
+            <div class="flow-node">
+              <strong>{{ draft.label }}</strong>
+              <span>{{ index === 0 ? '基准场次' : `第 ${index + 1} 场` }} · {{ draft.rows.length }} 行</span>
+            </div>
+          </template>
         </div>
 
         <template v-if="rest.length">
@@ -104,7 +110,7 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
           <div class="compare-list">
             <div v-for="draft in rest" :key="draft.id" class="compare-item muted-item">
               <el-checkbox :model-value="false" @change="emit('toggle', draft.id)" />
-              <el-tag type="info" size="small" round>—</el-tag>
+              <el-tag type="info" size="small">—</el-tag>
               <div class="compare-main">
                 <strong>{{ draft.label }}</strong>
                 <span>{{ draft.workbook.fileName }}</span>
@@ -112,15 +118,10 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
             </div>
           </div>
         </template>
-      </el-card>
+      </PanelBox>
 
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-head">
-            <strong>导出哪些表</strong>
-            <span class="muted small">只导出勾选的工作表</span>
-          </div>
-        </template>
+      <PanelBox title="导出哪些表" class="dense">
+        <template #extra>只导出勾选的工作表</template>
         <div class="export-list">
           <label v-for="item in EXPORT_ITEMS" :key="item.key" class="export-item">
             <el-checkbox
@@ -133,8 +134,13 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
             </div>
           </label>
         </div>
+        <div class="export-summary">
+          <div class="export-stat"><span>参与场次</span><strong>{{ selected.length }}</strong></div>
+          <div class="export-stat"><span>学生科目</span><strong>{{ subjectCount }}</strong></div>
+          <div class="export-stat"><span>预计工作表</span><strong>{{ sheetCount }}</strong></div>
+        </div>
         <p class="muted small mt-12">结果页仍可随时修改导出项；CSV 固定导出“汇总总览”。</p>
-      </el-card>
+      </PanelBox>
     </div>
 
     <div class="floating-actions">
@@ -146,3 +152,5 @@ const toggleSelection = (key: keyof ExportSelection, value: boolean) => {
     </div>
   </div>
 </template>
+
+

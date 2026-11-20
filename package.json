@@ -1,5 +1,5 @@
 {
-  "name": "grade-compare",
+  "name": "score-sheet-analysis",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -31,5 +31,6 @@
     "vue-tsc": "^3.3.14"
   }
 }
+
 
 

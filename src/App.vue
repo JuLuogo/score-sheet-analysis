@@ -1,5 +1,5 @@
-﻿<script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type {
   AnalysisOptions,
@@ -28,6 +28,7 @@ import UploadStage from './components/UploadStage.vue'
 import MappingStage from './components/MappingStage.vue'
 import SelectStage from './components/SelectStage.vue'
 import ResultStage from './components/ResultStage.vue'
+import ScaleScreen from './components/ScaleScreen.vue'
 
 type Stage = 'upload' | 'mapping' | 'select' | 'result'
 
@@ -387,115 +388,135 @@ const doExportCsv = () => {
   exportCsv(result.value, className.value.trim() || '成绩对比')
 }
 
+const now = ref(new Date())
+let timer: number | undefined
+const navItems = ['上传成绩单', '确认字段', '选择场次', '查看结果']
+const clock = computed(() => {
+  const date = now.value
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const week = ['日', '一', '二', '三', '四', '五', '六'][date.getDay()]
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} 周${week} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+})
+
 onMounted(() => {
+  timer = window.setInterval(() => {
+    now.value = new Date()
+  }, 1000)
   const demo = new URLSearchParams(window.location.search).get('demo')
   if (demo === '1') handleDemo('result')
   else if (demo === 'mapping') handleDemo('mapping')
   else if (demo === 'select') handleDemo('select')
 })
+
+onBeforeUnmount(() => {
+  if (timer) window.clearInterval(timer)
+})
 </script>
 
 <template>
-  <div class="app">
-    <header class="topbar no-print">
-      <div class="brand">
-        <span class="brand-mark">成</span>
-        <div>
-          <strong>成绩对比分析</strong>
-          <span>多场考试 · 横向对比 · 本地处理</span>
+  <ScaleScreen>
+    <div class="screen">
+      <header class="screen-header">
+        <div class="header-left">
+          <div class="logo-orb">成</div>
+          <div class="brand-text">
+            <h1>成绩单数据分析</h1>
+            <p>GRADE SHEET ANALYTICS · 多场横向对比</p>
+          </div>
         </div>
-      </div>
-      <div class="topbar-right">
-        <el-tag type="success" effect="light" round size="small">本地处理 · 不上传</el-tag>
-        <a class="top-link" href="https://edgeone.ai/pages" target="_blank" rel="noreferrer noopener">
-          EdgeOne Pages
-        </a>
-      </div>
-    </header>
+        <nav class="stage-nav">
+          <span
+            v-for="(item, index) in navItems"
+            :key="item"
+            class="stage-nav-item"
+            :class="{ active: stepIndex === index, done: stepIndex > index }"
+          >
+            <i>{{ String(index + 1).padStart(2, '0') }}</i>
+            {{ item }}
+          </span>
+        </nav>
+        <div class="header-right">
+          <span class="live-dot" />
+          <span class="header-time">{{ clock }}</span>
+        </div>
+      </header>
 
-    <main class="container" :class="stage === 'result' ? 'wide' : 'slim'">
-      <el-steps v-if="stage !== 'result'" :active="stepIndex" finish-status="success" class="steps no-print">
-        <el-step title="上传成绩单" description="至少 2 份，可多选" />
-        <el-step title="确认字段" description="表头 / 姓名 / 科目" />
-        <el-step title="选择场次" description="对比顺序与导出表" />
-        <el-step title="查看结果" description="图表与矩阵" />
-      </el-steps>
+      <main class="screen-body" :class="`stage-${stage}`">
+        <UploadStage
+          v-if="stage === 'upload'"
+          :drafts="drafts"
+          :busy="busy > 0"
+          :history="history"
+          :error="error"
+          @files="addFiles"
+          @demo="handleDemo('result')"
+          @remove="removeDraft"
+          @next="goMapping"
+          @restore="restoreHistory"
+          @remove-history="deleteHistory"
+        />
 
-      <UploadStage
-        v-if="stage === 'upload'"
-        :drafts="drafts"
-        :busy="busy > 0"
-        :history="history"
-        :error="error"
-        @files="addFiles"
-        @demo="handleDemo('result')"
-        @remove="removeDraft"
-        @next="goMapping"
-        @restore="restoreHistory"
-        @remove-history="deleteHistory"
-      />
+        <MappingStage
+          v-else-if="stage === 'mapping'"
+          :drafts="drafts"
+          :active-id="activeId"
+          :options="options"
+          :templates="templates"
+          :error="error"
+          :status="draftStatus"
+          @select="setActive"
+          @update="updateDraft"
+          @remove="removeDraft"
+          @back="stage = 'upload'"
+          @next="goSelect"
+          @options="setOptions"
+          @save-template="saveTemplate"
+          @apply-template="applyTemplate"
+          @delete-template="deleteTemplate"
+        />
 
-      <MappingStage
-        v-else-if="stage === 'mapping'"
-        :drafts="drafts"
-        :active-id="activeId"
-        :options="options"
-        :templates="templates"
-        :error="error"
-        :status="draftStatus"
-        @select="setActive"
-        @update="updateDraft"
-        @remove="removeDraft"
-        @back="stage = 'upload'"
-        @next="goSelect"
-        @options="setOptions"
-        @save-template="saveTemplate"
-        @apply-template="applyTemplate"
-        @delete-template="deleteTemplate"
-      />
+        <SelectStage
+          v-else-if="stage === 'select'"
+          :drafts="drafts"
+          :selected-ids="selectedIds"
+          :selection="selection"
+          :error="error"
+          @toggle="toggleSelected"
+          @move="moveSelected"
+          @selection="setSelection"
+          @back="stage = 'mapping'"
+          @run="runAnalysis"
+        />
 
-      <SelectStage
-        v-else-if="stage === 'select'"
-        :drafts="drafts"
-        :selected-ids="selectedIds"
-        :selection="selection"
-        :error="error"
-        @toggle="toggleSelected"
-        @move="moveSelected"
-        @selection="setSelection"
-        @back="stage = 'mapping'"
-        @run="runAnalysis"
-      />
+        <ResultStage
+          v-else-if="stage === 'result' && result"
+          :result="result"
+          :class-name="className"
+          :selection="selection"
+          :exporting="exporting"
+          :saved="saved"
+          @update:class-name="setClassName"
+          @selection="setSelection"
+          @export-xlsx="doExportXlsx"
+          @export-csv="doExportCsv"
+          @save="saveHistory"
+          @back="stage = 'select'"
+          @reset="reset"
+        />
 
-      <ResultStage
-        v-else-if="stage === 'result' && result"
-        :result="result"
-        :class-name="className"
-        :selection="selection"
-        :exporting="exporting"
-        :saved="saved"
-        @update:class-name="setClassName"
-        @selection="setSelection"
-        @export-xlsx="doExportXlsx"
-        @export-csv="doExportCsv"
-        @save="saveHistory"
-        @back="stage = 'select'"
-        @reset="reset"
-      />
+        <div v-else-if="stage === 'result'" class="screen-empty">
+          <p>{{ error || '暂无可分析的数据，请返回重新选择。' }}</p>
+          <el-button type="primary" @click="stage = 'select'">返回选择</el-button>
+        </div>
+      </main>
 
-      <el-card v-else-if="stage === 'result'" class="empty-panel" shadow="never">
-        <p>{{ error || '暂无可分析的数据，请返回重新选择。' }}</p>
-        <el-button @click="stage = 'select'">返回选择</el-button>
-      </el-card>
-    </main>
-
-    <footer class="site-footer no-print">
-      <span>成绩对比分析系统 · Vue 3 + Element Plus · 纯前端 · 可部署在 EdgeOne Pages</span>
-      <span>数据仅存本机浏览器；导出文件由浏览器直接生成</span>
-    </footer>
-  </div>
+      <footer class="screen-footer">
+        <span>DATA SOURCE · 浏览器本地解析，成绩不上传服务器</span>
+        <span>{{ drafts.length ? `${drafts.length} 场成绩单已接入` : '等待接入成绩单' }}</span>
+      </footer>
+    </div>
+  </ScaleScreen>
 </template>
-
-
-
 

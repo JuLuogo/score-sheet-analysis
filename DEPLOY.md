@@ -37,10 +37,10 @@ npm ci
 npm run build
 
 # 3. 部署（-n 指定项目名，首次会自动创建）
-edgeone pages deploy -n grade-compare
+edgeone pages deploy -n score-sheet-analysis
 ```
 
-部署完成后控制台会输出访问地址（形如 `https://grade-compare.edgeone.app`）。
+部署完成后控制台会输出访问地址（形如 `https://score-sheet-analysis.edgeone.app`）。
 
 ## 方式三：控制台直接上传
 
@@ -79,4 +79,5 @@ npm run preview
 **数据会不会上传**：不会。解析、计算、导出全部在浏览器本地完成，站点没有后端接口。
 
 **能不能多人共用一份数据**：当前版本以本机浏览器为单位（localStorage）。如需多端共享，需要接入 Supabase / EdgeOne KV 等存储，属于后续扩展。
+
 
