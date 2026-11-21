@@ -90,6 +90,15 @@ const subjectOptions = computed(() => {
 
 const selectedCols = computed(() => active.value?.config.subjectCols.map((item) => item.col) ?? [])
 
+const passPercent = computed(() => Math.round((props.options.passRatio ?? 0.6) * 100))
+const excellentPercent = computed(() => Math.round((props.options.excellentRatio ?? 0.8) * 100))
+
+const setRatio = (key: 'passRatio' | 'excellentRatio', value?: number) => {
+  if (value == null) return
+  const ratio = Math.min(1, Math.max(0, value / 100))
+  emit('options', { ...props.options, [key]: ratio })
+}
+
 const previewData = computed(() => {
   if (!active.value) return []
   const rows = active.value.rows.slice(active.value.headerRow + 1, active.value.headerRow + 5)
@@ -373,8 +382,35 @@ const applySelected = (id: string) => {
           </div>
         </div>
 
+        <div class="ratio-bar mapping-ratio">
+          <span class="ratio-title">统计口径</span>
+          <span>及格线</span>
+          <el-input-number
+            :model-value="passPercent"
+            :min="1"
+            :max="100"
+            :step="5"
+            size="small"
+            controls-position="right"
+            @update:modelValue="(value?: number) => setRatio('passRatio', value)"
+          />
+          <span>% 满分</span>
+          <span class="ratio-gap">优秀线</span>
+          <el-input-number
+            :model-value="excellentPercent"
+            :min="1"
+            :max="100"
+            :step="5"
+            size="small"
+            controls-position="right"
+            @update:modelValue="(value?: number) => setRatio('excellentRatio', value)"
+          />
+          <span>% 满分</span>
+          <span class="ratio-hint">例：60% 即总分的 60% 为及格；与「科目统计」页同步</span>
+        </div>
+
         <div class="marks-hint">
-          满分为可选项，用于计算及格率/优秀率；及格线和优秀线的比例在「科目统计」页调整
+          满分为可选项，用于按比例换算及格线/优秀线；未填时按该科最高分推断
         </div>
         <div class="marks-grid">
           <div v-for="subject in subjects" :key="subject" class="mark-item">
