@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import ChartPanel from './ChartPanel.vue'
@@ -42,8 +42,21 @@ const dialogVisible = ref(false)
 const first = computed(() => props.result.labels[0])
 const last = computed(() => props.result.labels[props.result.labels.length - 1])
 
-const avgOption = computed(() => (
-  {
+const avgRange = computed(() => {
+  const values = props.result.examStats
+    .flatMap((stat) => props.result.subjects.map((subject) => stat.subjectAvg[subject]))
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (!values.length) return null
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const pad = min === max ? 5 : Math.max(2, (max - min) * 0.2)
+  return {
+    min: Math.max(0, Math.floor(min - pad)),
+    max: Math.ceil(max + pad),
+  }
+})
+
+const avgOption = computed(() => ({
   color: ['#3b6ea5', '#c0504d', '#2e7d32', '#b7791f', '#7f7f7f', '#8c6d31', '#4f81bd'],
   textStyle: CHART_FONT,
   tooltip: {
@@ -52,7 +65,7 @@ const avgOption = computed(() => (
     borderColor: '#dddddd',
   },
   legend: { top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: '#666666' } },
-  grid: { left: 38, right: 14, top: 34, bottom: 24 },
+  grid: { left: 44, right: 16, top: 34, bottom: 24 },
   xAxis: {
     type: 'category',
     data: props.result.labels,
@@ -63,6 +76,8 @@ const avgOption = computed(() => (
   },
   yAxis: {
     type: 'value',
+    min: avgRange.value?.min,
+    max: avgRange.value?.max,
     splitLine: { lineStyle: { color: '#eeeeee' } },
     axisLabel: { color: '#777777', fontSize: 11 },
   },
@@ -77,6 +92,19 @@ const avgOption = computed(() => (
   })),
 }))
 
+const visibleBuckets = computed(() => {
+  const list = props.result.buckets
+  if (!list.length) return list
+  const hasData = (bucket: (typeof list)[number]) => Boolean(bucket.first || bucket.last)
+  const start = list.findIndex(hasData)
+  if (start < 0) return []
+  let end = start
+  list.forEach((bucket, index) => {
+    if (hasData(bucket)) end = index
+  })
+  return list.slice(start, end + 1)
+})
+
 const bucketOption = computed(() => ({
   color: ['#b7c4d4', '#3b6ea5'],
   textStyle: CHART_FONT,
@@ -86,10 +114,10 @@ const bucketOption = computed(() => ({
     borderColor: '#dddddd',
   },
   legend: { top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: '#666666' } },
-  grid: { left: 34, right: 12, top: 30, bottom: 22 },
+  grid: { left: 40, right: 14, top: 30, bottom: 22 },
   xAxis: {
     type: 'category',
-    data: props.result.buckets.map((bucket) => bucket.label),
+    data: visibleBuckets.value.map((bucket) => bucket.label),
     axisTick: { show: false },
     axisLine: { lineStyle: { color: '#e0e0e0' } },
     axisLabel: { color: '#666666', fontSize: 10 },
@@ -100,8 +128,8 @@ const bucketOption = computed(() => ({
     axisLabel: { color: '#777777', fontSize: 10 },
   },
   series: [
-    { name: first.value, type: 'bar', barMaxWidth: 18, data: props.result.buckets.map((b) => b.first), label: { show: true, position: 'top', fontSize: 9, color: '#666666' } },
-    { name: last.value, type: 'bar', barMaxWidth: 18, data: props.result.buckets.map((b) => b.last), label: { show: true, position: 'top', fontSize: 9, color: '#3b6ea5' } },
+    { name: first.value, type: 'bar', barMaxWidth: 20, data: visibleBuckets.value.map((b) => b.first), label: { show: true, position: 'top', fontSize: 9, color: '#666666' } },
+    { name: last.value, type: 'bar', barMaxWidth: 20, data: visibleBuckets.value.map((b) => b.last), label: { show: true, position: 'top', fontSize: 9, color: '#3b6ea5' } },
   ],
 }))
 
@@ -367,7 +395,7 @@ const printPage = () => window.print()
       <section class="card">
         <div class="card-head">
           <h3>各科平均分趋势</h3>
-          <span>按场次顺序</span>
+          <span>按场次顺序 · 纵轴按数据范围缩放</span>
         </div>
         <ChartPanel key="trend-chart" :option="avgOption" :height="430" />
       </section>
@@ -400,7 +428,7 @@ const printPage = () => window.print()
       <section class="card">
         <div class="card-head">
           <h3>总分分数段：首场 vs 末场</h3>
-          <span>每 {{ result.options.bucketSize }} 分一段</span>
+          <span>每 {{ result.options.bucketSize }} 分一段 · 仅显示有数据的区间</span>
         </div>
         <ChartPanel key="bucket-chart" :option="bucketOption" :height="470" />
       </section>
@@ -416,7 +444,7 @@ const printPage = () => window.print()
             </tr>
           </thead>
           <tbody>
-            <tr v-for="bucket in result.buckets" :key="bucket.label">
+            <tr v-for="bucket in visibleBuckets" :key="bucket.label">
               <td>{{ bucket.label }}</td>
               <td>{{ bucket.first }}</td>
               <td>{{ bucket.last }}</td>
@@ -577,6 +605,7 @@ const printPage = () => window.print()
     </el-dialog>
   </div>
 </template>
+
 
 
 
