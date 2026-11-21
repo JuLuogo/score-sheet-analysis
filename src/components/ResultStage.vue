@@ -1,6 +1,6 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
+import type { AnalysisOptions, ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import ChartPanel from './ChartPanel.vue'
 import { CHART_FONT } from '../lib/echarts'
 import { deltaTone, deltaWord, fmtDelta, fmtRankDelta, fmtScore } from '../lib/format'
@@ -28,12 +28,24 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:className': [value: string]
   selection: [value: ExportSelection]
+  options: [value: AnalysisOptions]
   exportXlsx: []
   exportCsv: []
   save: []
   back: []
   reset: []
 }>()
+
+const passPercent = computed(() => Math.round((props.result.options.passRatio ?? 0.6) * 100))
+const excellentPercent = computed(() => Math.round((props.result.options.excellentRatio ?? 0.8) * 100))
+
+const setRatio = (key: 'passRatio' | 'excellentRatio', value?: number) => {
+  if (value == null) return
+  const ratio = Math.min(1, Math.max(0, value / 100))
+  emit('options', { ...props.result.options, [key]: ratio })
+}
+
+const fmtRate = (value: number | null) => (value == null ? '—' : `${value.toFixed(1)}%`)
 
 const subject = ref(props.result.subjects[0] ?? '')
 const query = ref('')
@@ -462,30 +474,77 @@ const printPage = () => window.print()
           <h3>科目统计</h3>
           <span>{{ first }} → {{ last }}</span>
         </div>
+
+        <div class="ratio-bar">
+          <span class="ratio-title">统计口径</span>
+          <span>及格线</span>
+          <el-input-number
+            :model-value="passPercent"
+            :min="1"
+            :max="100"
+            :step="5"
+            size="small"
+            controls-position="right"
+            @update:modelValue="(value?: number) => setRatio('passRatio', value)"
+          />
+          <span>% 满分</span>
+          <span class="ratio-gap">优秀线</span>
+          <el-input-number
+            :model-value="excellentPercent"
+            :min="1"
+            :max="100"
+            :step="5"
+            size="small"
+            controls-position="right"
+            @update:modelValue="(value?: number) => setRatio('excellentRatio', value)"
+          />
+          <span>% 满分</span>
+          <span class="ratio-hint">
+            例：60% 即总分的 60% 为及格、80% 为优秀；修改后立即重算。未填满分时按该科最高分推断。
+          </span>
+        </div>
+
         <el-table :data="[...result.stats, result.totalStat]" size="small" border>
-          <el-table-column prop="subject" label="科目" width="100" />
-          <el-table-column label="均分（首 → 末）" min-width="160">
+          <el-table-column label="科目" width="150">
+            <template #default="{ row }">
+              <div>{{ row.subject }}</div>
+              <small v-if="row.fullMark" class="cell-sub">
+                满分 {{ fmtScore(row.fullMark) }} · 及格 {{ fmtScore(row.passMark) }}
+              </small>
+            </template>
+          </el-table-column>
+          <el-table-column label="均分（首 → 末）" min-width="150">
             <template #default="{ row }">{{ fmtScore(row.firstAvg) }} → {{ fmtScore(row.lastAvg) }}</template>
           </el-table-column>
-          <el-table-column label="变化" width="90">
+          <el-table-column label="变化" width="80">
             <template #default="{ row }"><span :class="toneClass(row.avgDelta)">{{ fmtDelta(row.avgDelta) }}</span></template>
           </el-table-column>
-          <el-table-column label="最高（首 → 末）" min-width="150">
+          <el-table-column label="最高（首 → 末）" min-width="140">
             <template #default="{ row }">{{ fmtScore(row.firstMax) }} → {{ fmtScore(row.lastMax) }}</template>
           </el-table-column>
-          <el-table-column label="最低（首 → 末）" min-width="150">
+          <el-table-column label="最低（首 → 末）" min-width="140">
             <template #default="{ row }">{{ fmtScore(row.firstMin) }} → {{ fmtScore(row.lastMin) }}</template>
           </el-table-column>
-          <el-table-column label="名次↑" width="80">
+          <el-table-column label="名次↑" width="72">
             <template #default="{ row }"><span class="tone-up">{{ row.up }}</span></template>
           </el-table-column>
-          <el-table-column label="名次↓" width="80">
+          <el-table-column label="名次↓" width="72">
             <template #default="{ row }"><span class="tone-down">{{ row.down }}</span></template>
           </el-table-column>
-          <el-table-column prop="flat" label="持平" width="70" />
-          <el-table-column label="及格人数" width="110">
+          <el-table-column prop="flat" label="持平" width="66" />
+          <el-table-column label="及格人数（首→末）" width="130">
             <template #default="{ row }">
-              {{ row.passMark == null ? '—' : `${row.firstPassCount ?? '—'} → ${row.lastPassCount ?? '—'}` }}
+              {{ row.firstPassCount ?? '—' }} → {{ row.lastPassCount ?? '—' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="及格率（首→末）" width="130">
+            <template #default="{ row }">
+              {{ fmtRate(row.firstPassRate) }} → {{ fmtRate(row.lastPassRate) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="优秀率（首→末）" width="130">
+            <template #default="{ row }">
+              {{ fmtRate(row.firstExcellentRate) }} → {{ fmtRate(row.lastExcellentRate) }}
             </template>
           </el-table-column>
         </el-table>
@@ -606,6 +665,10 @@ const printPage = () => window.print()
     </el-dialog>
   </div>
 </template>
+
+
+
+
 
 
 

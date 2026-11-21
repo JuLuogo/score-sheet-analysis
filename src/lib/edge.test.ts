@@ -161,3 +161,43 @@ describe('CSV 与重名', () => {
     expect(exam.warnings.some((warning) => warning.includes('重名'))).toBe(true)
   })
 })
+
+describe('及格率与优秀率', () => {
+  it('按满分比例计算人数和比率', () => {
+    const e1 = examFromRows('e1', '月考', [
+      ['姓名', '语文'],
+      ['甲', 60],
+      ['乙', 80],
+      ['丙', 59],
+      ['丁', 100],
+    ])
+    const e2 = examFromRows('e2', '期中', [
+      ['姓名', '语文'],
+      ['甲', 70],
+      ['乙', 90],
+      ['丙', 60],
+      ['丁', 79],
+    ])
+    const result = analyzeSeries([e1, e2], {
+      ...OPTIONS,
+      fullMarks: { 语文: 100 },
+      passRatio: 0.6,
+      excellentRatio: 0.8,
+    })
+    const stat = result.stats.find((item) => item.subject === '语文')!
+    expect(stat.fullMark).toBe(100)
+    expect(stat.passMark).toBe(60)
+    expect(stat.excellentMark).toBe(80)
+    expect(stat.firstPassCount).toBe(3)
+    expect(stat.lastPassCount).toBe(4)
+    expect(stat.firstPassRate).toBe(75)
+    expect(stat.lastPassRate).toBe(100)
+    expect(stat.firstExcellentCount).toBe(2)
+    expect(stat.lastExcellentCount).toBe(1)
+    expect(stat.firstExcellentRate).toBe(50)
+    expect(stat.lastExcellentRate).toBe(25)
+    expect(result.totalStat.fullMark).toBe(100)
+    expect(result.totalStat.firstPassCount).toBe(3)
+  })
+})
+

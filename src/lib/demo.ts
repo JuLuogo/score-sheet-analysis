@@ -122,7 +122,10 @@ export function makeDemo(): { exams: ExamData[]; options: AnalysisOptions } {
     bucketSize: 50,
     fullMarks: Object.fromEntries(SUBJECTS.map((subject) => [subject.name, subject.full])),
     passMarks: { 语文: 72, 数学: 72, 英语: 72, 专业课: 120, 发动机: 60 },
+    passRatio: 0.6,
+    excellentRatio: 0.8,
   }
   return { exams, options }
 }
+
 

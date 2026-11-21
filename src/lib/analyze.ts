@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AnalysisOptions,
   BucketRow,
   ExamData,
@@ -91,6 +91,30 @@ function buildExamStat(exam: ExamData, subjects: string[]): SeriesExamStat {
   }
 }
 
+const DEFAULT_PASS_RATIO = 0.6
+const DEFAULT_EXCELLENT_RATIO = 0.8
+
+function inferFullMark(values: (number | null)[]): number {
+  const clean = values.filter((value): value is number => value != null)
+  if (!clean.length) return 100
+  const max = Math.max(...clean)
+  for (const standard of [100, 120, 150, 200, 300]) {
+    if (max <= standard && max >= standard * 0.5) return standard
+  }
+  const step = max <= 100 ? 10 : max <= 300 ? 50 : 100
+  return Math.ceil(max / step) * step
+}
+
+function resolveFullMark(subject: string, students: SeriesStudent[], options: AnalysisOptions): number {
+  const configured = options.fullMarks[subject]
+  if (configured != null && Number.isFinite(configured) && configured > 0) return configured
+  return inferFullMark(students.flatMap((student) => student.scores[subject] ?? []))
+}
+
+function rateOf(count: number, total: number): number | null {
+  return total ? Math.round((count / total) * 1000) / 10 : null
+}
+
 function buildSubjectStat(
   subject: string,
   students: SeriesStudent[],
@@ -103,7 +127,15 @@ function buildSubjectStat(
   const lastClean = lastScores.filter((value): value is number => value != null)
   const firstAvg = average(firstScores)
   const lastAvg = average(lastScores)
-  const passMark = options.passMarks[subject] ?? null
+  const fullMark = resolveFullMark(subject, students, options)
+  const passRatio = options.passRatio ?? DEFAULT_PASS_RATIO
+  const excellentRatio = options.excellentRatio ?? DEFAULT_EXCELLENT_RATIO
+  const passMark = round2(fullMark * passRatio)
+  const excellentMark = round2(fullMark * excellentRatio)
+  const firstPassCount = firstClean.filter((value) => value >= fullMark * passRatio).length
+  const lastPassCount = lastClean.filter((value) => value >= fullMark * passRatio).length
+  const firstExcellentCount = firstClean.filter((value) => value >= fullMark * excellentRatio).length
+  const lastExcellentCount = lastClean.filter((value) => value >= fullMark * excellentRatio).length
   const up = students.filter((student) => {
     const delta = student.rankDeltas[subject]
     return delta != null && delta > 0
@@ -115,8 +147,9 @@ function buildSubjectStat(
   const flat = students.filter((student) => student.rankDeltas[subject] === 0).length
   return {
     subject,
-    fullMark: options.fullMarks[subject] ?? null,
+    fullMark,
     passMark,
+    excellentMark,
     firstAvg: firstAvg == null ? null : round2(firstAvg),
     lastAvg: lastAvg == null ? null : round2(lastAvg),
     avgDelta: firstAvg == null || lastAvg == null ? null : round2(lastAvg - firstAvg),
@@ -127,21 +160,43 @@ function buildSubjectStat(
     up,
     down,
     flat,
-    firstPassCount: passMark == null ? null : firstClean.filter((value) => value >= passMark).length,
-    lastPassCount: passMark == null ? null : lastClean.filter((value) => value >= passMark).length,
+    firstPassCount,
+    lastPassCount,
+    firstPassRate: rateOf(firstPassCount, firstClean.length),
+    lastPassRate: rateOf(lastPassCount, lastClean.length),
+    firstExcellentCount,
+    lastExcellentCount,
+    firstExcellentRate: rateOf(firstExcellentCount, firstClean.length),
+    lastExcellentRate: rateOf(lastExcellentCount, lastClean.length),
   }
 }
 
-function buildTotalStat(students: SeriesStudent[], options: AnalysisOptions): SeriesSubjectStat {
+function buildTotalStat(
+  students: SeriesStudent[],
+  subjects: string[],
+  options: AnalysisOptions,
+): SeriesSubjectStat {
   const last = students[0]?.totals?.length ? students[0].totals.length - 1 : 0
   const firstClean = students.map((s) => s.totals[0]).filter((v): v is number => v != null)
   const lastClean = students.map((s) => s.totals[last]).filter((v): v is number => v != null)
   const firstAvg = average(students.map((s) => s.totals[0]))
   const lastAvg = average(students.map((s) => s.totals[last]))
+  const fullMark =
+    options.fullMarks['总分'] ??
+    subjects.reduce((sum, subject) => sum + resolveFullMark(subject, students, options), 0)
+  const passRatio = options.passRatio ?? DEFAULT_PASS_RATIO
+  const excellentRatio = options.excellentRatio ?? DEFAULT_EXCELLENT_RATIO
+  const passMark = round2(fullMark * passRatio)
+  const excellentMark = round2(fullMark * excellentRatio)
+  const firstPassCount = firstClean.filter((value) => value >= fullMark * passRatio).length
+  const lastPassCount = lastClean.filter((value) => value >= fullMark * passRatio).length
+  const firstExcellentCount = firstClean.filter((value) => value >= fullMark * excellentRatio).length
+  const lastExcellentCount = lastClean.filter((value) => value >= fullMark * excellentRatio).length
   return {
     subject: '总分',
-    fullMark: options.fullMarks['总分'] ?? null,
-    passMark: null,
+    fullMark: round2(fullMark),
+    passMark,
+    excellentMark,
     firstAvg: firstAvg == null ? null : round2(firstAvg),
     lastAvg: lastAvg == null ? null : round2(lastAvg),
     avgDelta: firstAvg == null || lastAvg == null ? null : round2(lastAvg - firstAvg),
@@ -152,8 +207,14 @@ function buildTotalStat(students: SeriesStudent[], options: AnalysisOptions): Se
     up: students.filter((s) => s.totalRankDelta != null && s.totalRankDelta > 0).length,
     down: students.filter((s) => s.totalRankDelta != null && s.totalRankDelta < 0).length,
     flat: students.filter((s) => s.totalRankDelta === 0).length,
-    firstPassCount: null,
-    lastPassCount: null,
+    firstPassCount,
+    lastPassCount,
+    firstPassRate: rateOf(firstPassCount, firstClean.length),
+    lastPassRate: rateOf(lastPassCount, lastClean.length),
+    firstExcellentCount,
+    lastExcellentCount,
+    firstExcellentRate: rateOf(firstExcellentCount, firstClean.length),
+    lastExcellentRate: rateOf(lastExcellentCount, lastClean.length),
   }
 }
 
@@ -288,7 +349,7 @@ export function analyzeSeries(exams: ExamData[], options: AnalysisOptions): Seri
   })
 
   const stats = subjects.map((subject) => buildSubjectStat(subject, students, options))
-  const totalStat = buildTotalStat(students, options)
+  const totalStat = buildTotalStat(students, subjects, options)
   const examStats = exams.map((exam) => buildExamStat(exam, subjects))
 
   const firstBuckets = bucketize(
@@ -338,4 +399,5 @@ export function analyzeSeries(exams: ExamData[], options: AnalysisOptions): Seri
     options,
   }
 }
+
 

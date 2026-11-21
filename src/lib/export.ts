@@ -1,4 +1,4 @@
-﻿import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
+import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import { deltaWord, fmtDelta, fmtRankDelta, fmtScore } from './format'
 
 const NAVY = 'FF1F3864'
@@ -98,6 +98,7 @@ function subtitleOf(result: SeriesAnalysis) {
     `共 ${result.labels.length} 场：${result.labels.join(' → ')}`,
     `基准：${result.labels[0]}`,
     `排名口径：${result.options.rankMode === 'competition' ? '并列名次（同分同名次，后续跳号）' : '顺序名次（同分按顺序编号）'}`,
+    `及格线：满分的 ${Math.round((result.options.passRatio ?? 0.6) * 100)}%；优秀线：满分的 ${Math.round((result.options.excellentRatio ?? 0.8) * 100)}%`,
   ]
   if (result.counts.comparableAll) parts.push(`全程参考 ${result.counts.comparableAll} 人`)
   return parts.join('；')
@@ -272,8 +273,15 @@ export async function buildWorkbook(
       '名次下降',
       '名次持平',
       '及格线',
+      '优秀线',
       '首场及格',
       '末场及格',
+      '首场及格率',
+      '末场及格率',
+      '首场优秀',
+      '末场优秀',
+      '首场优秀率',
+      '末场优秀率',
     ]
     title(ws, headers.length, `${className} · 科目统计`, subtitleOf(result))
     headerRow(ws, 3, headers)
@@ -293,8 +301,15 @@ export async function buildWorkbook(
         stat.down,
         stat.flat,
         stat.passMark,
+        stat.excellentMark,
         stat.firstPassCount,
         stat.lastPassCount,
+        stat.firstPassRate,
+        stat.lastPassRate,
+        stat.firstExcellentCount,
+        stat.lastExcellentCount,
+        stat.firstExcellentRate,
+        stat.lastExcellentRate,
       ]
       values.forEach((value, col) => {
         const cell = ws.getCell(row, col + 1)
@@ -302,11 +317,14 @@ export async function buildWorkbook(
         border(cell)
         cell.alignment = { horizontal: 'center', vertical: 'middle' }
         if (col === 0) cell.font = { bold: true }
+        if ([16, 17, 20, 21].includes(col) && value != null) cell.numFmt = '0.0"%"'
       })
       applyDelta(ws.getCell(row, 5), stat.avgDelta, false)
       ws.getRow(row).height = 24
     })
-    const widths = [10, 8, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+    const widths = Array.from({ length: headers.length }, () => 10)
+    widths[0] = 10
+    widths[1] = 8
     widths.forEach((width, index) => {
       ws.getColumn(index + 1).width = width
     })
@@ -396,6 +414,7 @@ export function exportCsv(result: SeriesAnalysis, className: string) {
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
   download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩分析_${stamp()}.csv`)
 }
+
 
 
 

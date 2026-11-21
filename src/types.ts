@@ -1,4 +1,4 @@
-export type Cell = string | number | null
+﻿export type Cell = string | number | null
 
 export interface SheetData {
   name: string
@@ -49,7 +49,12 @@ export interface AnalysisOptions {
   rankMode: RankMode
   bucketSize: number
   fullMarks: Record<string, number>
+  /** 兼容旧数据；新版本按满分比例计算及格线 */
   passMarks: Record<string, number>
+  /** 及格线占满分比例，默认 0.6 */
+  passRatio?: number
+  /** 优秀线占满分比例，默认 0.8 */
+  excellentRatio?: number
 }
 
 export interface SeriesStudent {
@@ -94,6 +99,13 @@ export interface SeriesSubjectStat {
   flat: number
   firstPassCount: number | null
   lastPassCount: number | null
+  excellentMark: number | null
+  firstPassRate: number | null
+  lastPassRate: number | null
+  firstExcellentCount: number | null
+  lastExcellentCount: number | null
+  firstExcellentRate: number | null
+  lastExcellentRate: number | null
 }
 
 export interface BucketRow {
@@ -166,3 +178,4 @@ export interface HistoryItem {
   options: AnalysisOptions
   selection: ExportSelection
 }
+

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { AnalysisOptions, ExamConfig, ExamDraft, Template } from '../types'
 import { detectHeaderRow, guessConfig } from '../lib/parse'
@@ -373,7 +373,9 @@ const applySelected = (id: string) => {
           </div>
         </div>
 
-        <div class="marks-hint">每行依次为：科目 / 满分 / 及格线（满分与及格线可留空）</div>
+        <div class="marks-hint">
+          满分为可选项，用于计算及格率/优秀率；及格线和优秀线的比例在「科目统计」页调整
+        </div>
         <div class="marks-grid">
           <div v-for="subject in subjects" :key="subject" class="mark-item">
             <span>{{ subject }}</span>
@@ -381,15 +383,8 @@ const applySelected = (id: string) => {
               :model-value="markValue(options.fullMarks, subject)"
               :min="0"
               :controls="false"
-              placeholder="满分"
+              placeholder="满分，如 100"
               @change="(value?: number) => setMark('fullMarks', subject, value)"
-            />
-            <el-input-number
-              :model-value="markValue(options.passMarks, subject)"
-              :min="0"
-              :controls="false"
-              placeholder="及格线"
-              @change="(value?: number) => setMark('passMarks', subject, value)"
             />
           </div>
         </div>

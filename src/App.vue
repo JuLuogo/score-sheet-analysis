@@ -37,7 +37,18 @@ const DEFAULT_OPTIONS: AnalysisOptions = {
   bucketSize: 50,
   fullMarks: {},
   passMarks: {},
+  passRatio: 0.6,
+  excellentRatio: 0.8,
 }
+
+const withOptionDefaults = (value: AnalysisOptions): AnalysisOptions => ({
+  ...DEFAULT_OPTIONS,
+  ...value,
+  fullMarks: value.fullMarks ?? {},
+  passMarks: value.passMarks ?? {},
+  passRatio: value.passRatio ?? 0.6,
+  excellentRatio: value.excellentRatio ?? 0.8,
+})
 
 const DEFAULT_SELECTION: ExportSelection = {
   summary: true,
@@ -47,12 +58,12 @@ const DEFAULT_SELECTION: ExportSelection = {
   notes: true,
 }
 
-const MARK_DEFAULTS: Record<string, [number, number]> = {
-  语文: [120, 72],
-  数学: [120, 72],
-  英语: [120, 72],
-  专业课: [200, 120],
-  发动机: [100, 60],
+const MARK_DEFAULTS: Record<string, number> = {
+  语文: 120,
+  数学: 120,
+  英语: 120,
+  专业课: 200,
+  发动机: 100,
 }
 
 const uid = () => `exam-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`
@@ -62,7 +73,7 @@ const drafts = ref<ExamDraft[]>([])
 const activeId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
 const exams = ref<ExamData[]>([])
-const options = ref<AnalysisOptions>(loadOptions() ?? DEFAULT_OPTIONS)
+const options = ref<AnalysisOptions>(withOptionDefaults(loadOptions() ?? DEFAULT_OPTIONS))
 const selection = ref<ExportSelection>({ ...DEFAULT_SELECTION })
 const DEFAULT_CLASS_NAME = '分析答案'
 const FALLBACK_CLASS_NAME = '分析'
@@ -221,14 +232,11 @@ const runAnalysis = () => {
       .map(buildFromDraft)
     const subjects = [...new Set(picked.flatMap((exam) => exam.subjects))]
     const fullMarks = { ...options.value.fullMarks }
-    const passMarks = { ...options.value.passMarks }
     for (const subject of subjects) {
       const preset = MARK_DEFAULTS[subject]
-      if (!preset) continue
-      if (fullMarks[subject] == null) fullMarks[subject] = preset[0]
-      if (passMarks[subject] == null && preset[1]) passMarks[subject] = preset[1]
+      if (preset && fullMarks[subject] == null) fullMarks[subject] = preset
     }
-    options.value = { ...options.value, fullMarks, passMarks }
+    options.value = { ...options.value, fullMarks }
     exams.value = picked
     saved.value = false
     resultView.value = 'rank'
@@ -253,7 +261,7 @@ const handleDemo = (to: 'mapping' | 'select' | 'result' = 'result') => {
   drafts.value = nextDrafts
   selectedIds.value = nextDrafts.map((draft) => draft.id)
   activeId.value = nextDrafts[0].id
-  options.value = demo.options
+  options.value = withOptionDefaults(demo.options)
   saved.value = false
   if (to === 'result') {
     exams.value = demo.exams
@@ -292,7 +300,7 @@ const applyTemplate = (template: Template) => {
     return { ...draft, config }
   }
   drafts.value = drafts.value.map(mapDraft)
-  options.value = { ...options.value, ...template.options }
+  options.value = withOptionDefaults({ ...options.value, ...template.options })
   ElMessage.success(`已应用模板「${template.name}」`)
 }
 
@@ -334,7 +342,7 @@ const saveHistory = () => {
 const restoreHistory = (item: HistoryItem) => {
   landingActive.value = false
   exams.value = item.exams
-  options.value = item.options
+  options.value = withOptionDefaults(item.options)
   selection.value = item.selection
   className.value = item.title
   saved.value = true
@@ -392,7 +400,7 @@ const deleteTemplate = (id: string) => {
 }
 
 const setOptions = (value: AnalysisOptions) => {
-  options.value = value
+  options.value = withOptionDefaults(value)
 }
 
 const setSelection = (value: ExportSelection) => {
@@ -586,6 +594,7 @@ onMounted(() => {
           :saved="saved"
           @update:class-name="setClassName"
           @selection="setSelection"
+          @options="setOptions"
           @export-xlsx="doExportXlsx"
           @export-csv="doExportCsv"
           @save="saveHistory"
@@ -601,6 +610,8 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+
 
 
 

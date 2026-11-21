@@ -235,6 +235,27 @@ try {
     })
   }
 
+  await check('统计页可调整及格线/优秀线并立即重算', async () => {
+    await page.getByRole('button', { name: '科目统计', exact: true }).click()
+    await page.waitForSelector('text=统计口径')
+    const firstRow = page.locator('.el-table__body tr').first()
+    const before = await firstRow.innerText()
+    assert(before.includes('%'), '统计表未显示比率')
+    const inputs = page.locator('.ratio-bar .el-input-number input')
+    await inputs.nth(0).click()
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('70')
+    await page.keyboard.press('Tab')
+    await inputs.nth(1).click()
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('90')
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(500)
+    const after = await firstRow.innerText()
+    assert(after !== before, '调整比例后统计未重算')
+    assert(after.includes('84'), `及格线未按 70% 计算：${after}`)
+  })
+
   await check('汇总矩阵可按姓名搜索', async () => {
     await page.getByRole('button', { name: '汇总矩阵', exact: true }).click()
     const input = page.locator('.card .el-input input').first()
@@ -311,6 +332,12 @@ try {
     assert(a1Col > 0, `未找到 a1 总分列：${headers}`)
     assert(summary.getCell(4, a1Col).value === 264, `张三 a1 总分错误：${summary.getCell(4, a1Col).value}`)
     assert(summary.getCell(4, a1Col + 1).value === 1, '张三 a1 排名应为 1')
+    const statsSheet = wb.getWorksheet('科目统计')
+    const statsHeaders = statsSheet.getRow(3).values
+    assert(statsHeaders.includes('首场及格率'), `统计表缺少及格率：${statsHeaders}`)
+    assert(statsHeaders.includes('末场优秀率'), `统计表缺少优秀率：${statsHeaders}`)
+    const subjectRow = statsSheet.getRow(4).values
+    assert(subjectRow[1] === '语文', `统计表首行应为语文：${subjectRow[1]}`)
   })
 
   await check('存到本机写入历史记录', async () => {
@@ -420,6 +447,8 @@ if (failed.length) {
   console.log(JSON.stringify(failed, null, 2))
 }
 process.exit(failed.length ? 1 : 0)
+
+
 
 
 
