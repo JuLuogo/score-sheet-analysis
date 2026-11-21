@@ -202,6 +202,11 @@ try {
     await shot('04-rank')
   })
 
+  await check('班级名称默认为“分析答案”', async () => {
+    const value = await page.locator('.class-name-input input').inputValue()
+    assert(value === '分析答案', `默认班级名称错误：${value}`)
+  })
+
   const views = [
     ['各科趋势', '各科平均分趋势'],
     ['分数段分布', '总分分数段'],
@@ -269,6 +274,18 @@ try {
     const text = fs.readFileSync(file, 'utf8')
     assert(text.length > 50, 'CSV 内容过短')
     assert(text.includes('姓名'), 'CSV 缺少姓名表头')
+  })
+
+  await check('班级名留空时导出名使用“分析”', async () => {
+    const input = page.locator('.class-name-input input')
+    await input.fill('')
+    const downloadPromise = page.waitForEvent('download', { timeout: 30000 })
+    await page.getByRole('button', { name: '导出 Excel' }).click()
+    const download = await downloadPromise
+    const name = download.suggestedFilename()
+    assert(name.includes('分析'), `导出文件名未使用“分析”：${name}`)
+    assert(!name.includes('24汽修'), '导出文件名仍含旧班级名')
+    await input.fill('测试班')
   })
 
   await check('导出内容可取消“各科分表”并生成对应工作表', async () => {
@@ -403,6 +420,7 @@ if (failed.length) {
   console.log(JSON.stringify(failed, null, 2))
 }
 process.exit(failed.length ? 1 : 0)
+
 
 
 

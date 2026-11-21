@@ -1,4 +1,4 @@
-import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
+﻿import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import { deltaWord, fmtDelta, fmtRankDelta, fmtScore } from './format'
 
 const NAVY = 'FF1F3864'
@@ -112,7 +112,7 @@ export async function buildWorkbook(
   const mod = (await import('exceljs')) as unknown as { default?: unknown }
   const ExcelJS = (mod.default ?? mod) as any
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = '成绩对比分析系统'
+  workbook.creator = '成绩单数据分析'
   workbook.created = new Date()
 
   const labels = result.labels
@@ -327,7 +327,7 @@ export async function buildWorkbook(
       ['', '排名变化 = 首场名次 − 末场名次：正数表示名次上升，负数表示名次下降，0 表示持平。'],
       ['', '分数变化 = 末场分数 − 首场分数；中间场次仅展示分数与排名，不单独计算变化。'],
       ['', '总分：若原表提供总分列则直接使用，否则按所选科目求和。'],
-      ['', '本文件由“成绩对比分析系统”生成，所有计算在浏览器本地完成。'],
+      ['', '本文件由“成绩单数据分析”生成，所有计算在浏览器本地完成。'],
     ]
     if (result.warnings.length) {
       lines.push(['', '数据提醒：'])
@@ -360,7 +360,7 @@ export async function exportXlsx(
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩对比_${stamp()}.xlsx`)
+  download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩分析_${stamp()}.xlsx`)
 }
 
 export function exportCsv(result: SeriesAnalysis, className: string) {
@@ -394,5 +394,8 @@ export function exportCsv(result: SeriesAnalysis, className: string) {
     lines.push(values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
   })
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
-  download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩对比_${stamp()}.csv`)
+  download(blob, `${safeName(className)}_${safeName(result.labels.join('-'))}_成绩分析_${stamp()}.csv`)
 }
+
+
+

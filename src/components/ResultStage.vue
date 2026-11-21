@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ExportSelection, SeriesAnalysis, SeriesStudent } from '../types'
 import ChartPanel from './ChartPanel.vue'
@@ -335,6 +335,7 @@ const printPage = () => window.print()
         <el-input
           :model-value="className"
           class="class-name-input"
+          placeholder="班级名称（留空则导出为“分析”）"
           @update:model-value="(value: string) => emit('update:className', value)"
         />
         <span class="view-sub">
@@ -605,6 +606,7 @@ const printPage = () => window.print()
     </el-dialog>
   </div>
 </template>
+
 
 
 

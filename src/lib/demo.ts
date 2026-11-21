@@ -1,4 +1,4 @@
-import type { AnalysisOptions, Cell, ExamData } from '../types'
+﻿import type { AnalysisOptions, Cell, ExamData } from '../types'
 import { buildExam, guessConfig } from './parse'
 
 function makeRandom(seed: number) {
@@ -39,7 +39,7 @@ function computeRanks(totals: number[]): number[] {
 
 function makeRows(scores: number[][], names: string[], totals: number[], ranks: number[]): Cell[][] {
   const rows: Cell[][] = []
-  rows.push(['示例班级 · 成绩对比演示数据'])
+  rows.push(['示例班级 · 成绩单分析演示数据'])
   rows.push(['排名', '学生姓名', ...SUBJECTS.map((subject) => subject.name), '总分'])
   scores.forEach((row, index) => {
     rows.push([ranks[index], names[index], ...row.map((value) => Math.round(value * 2) / 2), totals[index]])
@@ -125,3 +125,4 @@ export function makeDemo(): { exams: ExamData[]; options: AnalysisOptions } {
   }
   return { exams, options }
 }
+

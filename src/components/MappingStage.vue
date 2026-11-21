@@ -395,7 +395,7 @@ const applySelected = (id: string) => {
         </div>
 
         <div class="template-save mt-12">
-          <el-input v-model="templateName" placeholder="模板名称，如：24汽修月考模板" style="max-width: 260px" />
+          <el-input v-model="templateName" placeholder="模板名称，如：第一次月考模板" style="max-width: 260px" />
           <el-button :disabled="!templateName.trim()" @click="submitTemplate">保存字段模板</el-button>
           <el-select v-if="templates.length" placeholder="应用模板…" style="width: 180px" @change="applySelected">
             <el-option v-for="item in templates" :key="item.id" :label="item.name" :value="item.id" />
@@ -419,6 +419,7 @@ const applySelected = (id: string) => {
     </div>
   </div>
 </template>
+
 
 
 

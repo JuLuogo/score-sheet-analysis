@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type {
@@ -64,7 +64,9 @@ const selectedIds = ref<string[]>([])
 const exams = ref<ExamData[]>([])
 const options = ref<AnalysisOptions>(loadOptions() ?? DEFAULT_OPTIONS)
 const selection = ref<ExportSelection>({ ...DEFAULT_SELECTION })
-const className = ref('24汽修高考班')
+const DEFAULT_CLASS_NAME = '分析答案'
+const FALLBACK_CLASS_NAME = '分析'
+const className = ref(DEFAULT_CLASS_NAME)
 const templates = ref<Template[]>(loadTemplates())
 const history = ref<HistoryItem[]>(loadHistory())
 const busy = ref(0)
@@ -319,7 +321,7 @@ const saveHistory = () => {
   history.value = addHistory({
     id: `hist-${Date.now()}`,
     createdAt: Date.now(),
-    title: className.value.trim() || '成绩对比',
+    title: className.value.trim() || FALLBACK_CLASS_NAME,
     labels: result.value.labels,
     counts: result.value.counts,
     exams: exams.value,
@@ -344,7 +346,7 @@ const doExportXlsx = async () => {
   if (!result.value) return
   exporting.value = true
   try {
-    await exportXlsx(result.value, className.value.trim() || '成绩对比', selection.value)
+    await exportXlsx(result.value, className.value.trim() || FALLBACK_CLASS_NAME, selection.value)
     ElMessage.success('Excel 已生成')
   } catch (err) {
     showError(`导出失败：${err instanceof Error ? err.message : String(err)}`)
@@ -362,6 +364,7 @@ const reset = () => {
   exams.value = []
   error.value = ''
   saved.value = false
+  className.value = DEFAULT_CLASS_NAME
 }
 
 const toggleSelected = (id: string) => {
@@ -406,7 +409,7 @@ const setActive = (id: string) => {
 
 const doExportCsv = () => {
   if (!result.value) return
-  exportCsv(result.value, className.value.trim() || '成绩对比')
+  exportCsv(result.value, className.value.trim() || FALLBACK_CLASS_NAME)
 }
 
 type ResultView = 'rank' | 'trend' | 'bucket' | 'stats' | 'summary' | 'subject' | 'notes'
@@ -598,6 +601,7 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
 
 
 
